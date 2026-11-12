@@ -1,4 +1,6 @@
-import {list, get, put, remove, replaceAll, newId} from './db.js';
+import {list, get, put, remove, replaceStores, newId} from './db.js';
+import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
+import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -9,7 +11,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, progressExercise:'', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -181,8 +183,21 @@ async function flushSave() {
  saveTimer=null;
  await saveSession();
 }
+const photoUrls=new Map();
+async function refreshPhotos() {
+ state.photos=(await list('photos')).sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||'').localeCompare(a.createdAt||''));
+ state.photosLoaded=true;
+ const ids=new Set(state.photos.map(photo=>photo.id));
+ for(const [id,url] of photoUrls)if(!ids.has(id)){URL.revokeObjectURL(url);photoUrls.delete(id);}
+}
+function photoUrl(photo) {
+ if(!photo?.blob)return '';
+ if(!photoUrls.has(photo.id))photoUrls.set(photo.id,URL.createObjectURL(photo.blob));
+ return photoUrls.get(photo.id);
+}
 async function render() {
  await refreshData();
+ if(state.tab==='progress' && !state.session && !state.report && !state.photosLoaded)await refreshPhotos();
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
  title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings'})[state.tab]||'FitnessLog';
  main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings}[state.tab]||renderHome)();
