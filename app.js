@@ -262,6 +262,70 @@ function renderRestTimer(x) {
   '<a href="shortcuts://create-shortcut">Open Shortcuts to create it</a></details></div>':'')+
   '</section>';
 }
+function restKey(entry) {
+ return entry.exerciseId||normalizeName(entry.name)||entry.id;
+}
+let restAudioContext=null;
+function unlockRestSound(){
+ try {
+  const Context=window.AudioContext||window.webkitAudioContext;
+  if(!Context)return;
+  if(!restAudioContext)restAudioContext=new Context();
+  if(restAudioContext.state==='suspended')restAudioContext.resume().catch(()=>{});
+ } catch {}
+}
+function playRestSound(){
+ try {
+  if(restAudioContext?.state==='suspended')restAudioContext.resume().catch(()=>{});
+  if(restAudioContext?.state==='running'){
+   const now=restAudioContext.currentTime;
+   [0,.28,.56].forEach(offset=>{
+    const oscillator=restAudioContext.createOscillator();
+    const volume=restAudioContext.createGain();
+    oscillator.type='sine';
+    oscillator.frequency.value=870;
+    volume.gain.setValueAtTime(.0001,now+offset);
+    volume.gain.exponentialRampToValueAtTime(.2,now+offset+.02);
+    volume.gain.exponentialRampToValueAtTime(.0001,now+offset+.22);
+    oscillator.connect(volume).connect(restAudioContext.destination);
+    oscillator.start(now+offset);
+    oscillator.stop(now+offset+.23);
+   });
+  }
+  if(navigator.vibrate)navigator.vibrate([180,90,180]);
+ } catch {}
+}
+function refreshRestTimers(){
+ const timer=readRestTimer();
+ if(timer.mode==='finished'&&!timer.notified){
+  const recent=Number.isFinite(timer.endAt)&&Date.now()-timer.endAt<60000;
+  markRestAlerted();
+  if(recent&&!document.hidden){playRestSound();toast('Rest complete · '+timer.exerciseName);}
+ }
+ for(const panel of main.querySelectorAll('[data-exercise-timer]')){
+  const key=panel.dataset.exerciseTimer,preference=restPreference(key);
+  const active=timer.mode!=='idle'&&timer.exerciseId===key;
+  const remaining=active?timer.remaining:preference;
+  const time=panel.querySelector('[data-rest-clock]');
+  const status=panel.querySelector('[data-rest-status]');
+  if(time)time.textContent=restTimeLabel(remaining);
+  if(status)status.textContent=active?timer.mode==='running'?'Counting down':timer.mode==='paused'?'Paused':'Rest complete':
+    timer.mode==='running'?'Rest active on '+timer.exerciseName:'Ready';
+  const start=panel.querySelector('[data-rest-start]');
+  if(start)start.textContent=active&&timer.mode==='running'?'Restart':'Start';
+  const pause=panel.querySelector('[data-rest-pause]');
+  const resume=panel.querySelector('[data-rest-resume]');
+  const reset=panel.querySelector('[data-rest-reset]');
+  if(pause)pause.hidden=!active||timer.mode!=='running';
+  if(resume)resume.hidden=!active||timer.mode!=='paused';
+  if(reset)reset.hidden=!active;
+  panel.querySelectorAll('.rest-preset').forEach(button=>{
+   const selected=Number(button.dataset.duration)===preference;
+   button.classList.toggle('selected',selected);
+   button.setAttribute('aria-pressed',String(selected));
+  });
+ }
+}
 function renderExercise(x,i) {
  const isOpen=state.expanded.has(x.id);
  const prev=x.exerciseId?previousPerformance(x.exerciseId,state.session?.id,state.session?.date):null;
@@ -598,6 +662,38 @@ async function action(name,el) {
   state.previousOpenId=shouldOpen?el.dataset.id:null;
   return;
  }
+ if(name==='rest-start'||name==='rest-iphone'||name==='rest-pause'||name==='rest-resume'||name==='rest-reset'||name==='rest-preset'||name==='rest-minus'||name==='rest-plus'){
+  const exercise=s?.exercises?.find(x=>x.id===el.dataset.id);
+  if(!exercise)return;
+  const key=restKey(exercise);
+  const active=readRestTimer();
+  const same=active.mode!=='idle'&&active.exerciseId===key;
+  if(name==='rest-start'||name==='rest-iphone'){
+   const seconds=restPreference(key);
+   unlockRestSound();
+   startRestTimer(key,exercise.name,seconds);
+   refreshRestTimers();
+   if(name==='rest-iphone'){
+    // The native iPhone Clock alarm is run by the user's own Shortcut.
+    // Safari/PWA JavaScript cannot schedule an OS alarm on its own.
+    window.location.href=iphoneShortcutUrl(seconds);
+   }
+  }else if(name==='rest-preset'){
+   setRestPreference(key,Number(el.dataset.duration));
+   refreshRestTimers();
+  }else if(name==='rest-minus'||name==='rest-plus'){
+   const delta=name==='rest-plus'?15:-15;
+   if(same&&(active.mode==='running'||active.mode==='paused'))adjustRestTimer(delta);
+   else setRestPreference(key,restPreference(key)+delta);
+   refreshRestTimers();
+  }else if(same){
+   if(name==='rest-pause')pauseRestTimer();
+   if(name==='rest-resume'){unlockRestSound();resumeRestTimer();}
+   if(name==='rest-reset')resetRestTimer();
+   refreshRestTimers();
+  }
+  return;
+ }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
@@ -799,3 +895,7 @@ document.addEventListener('submit',async ev=>{
 });
 $('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
 (async()=>{try{await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
+setInterval(refreshRestTimers,500);
+document.addEventListener('visibilitychange',refreshRestTimers);
+window.addEventListener('pageshow',refreshRestTimers);
+window.addEventListener('focus',refreshRestTimers);
