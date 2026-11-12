@@ -21,8 +21,12 @@ python3 -m http.server 8000
 
 Visit http://localhost:8000.
 
-## Cloudflare
-Configure a Cloudflare Workers project with Static Assets sourced from this repository (the repository root is the asset directory). No build command or output compilation is necessary. Alternatively, deploy as a Cloudflare Pages static site with no build step and root output.
+## Cloudflare Workers deployment
+The repository includes a `wrangler.jsonc` file configuring the existing Worker named `fitnesslog` and serving the repository's static application assets. No framework or build step is needed.
+
+In **Cloudflare > Workers & Pages > fitnesslog > Settings > Builds**, connect **Sttaggs/FitnessLog**, choose the production branch **main**, leave the build command blank, and use the deploy command `npx wrangler deploy`. Check the Builds/Deployments history for the commit SHA after merges; a GitHub commit alone does not prove deployment. This setup targets the existing `fitnesslog.masqas00.workers.dev` Worker, not a separate Pages site.
+
+If automatic deployment is absent, confirm the Git integration is connected to this Worker and the correct repository/branch. If a build fails, open its build log. If the deployed commit matches GitHub but the app appears outdated, refresh or reopen the installed PWA to update its service worker.
 
 ## Data and privacy
 Data is saved **only in the browser on the current device**, not in GitHub or Cloudflare. The GitHub repository is public; never commit workout records or progress photos to source control. Clearing browser data or uninstalling the app may remove records. Use the full JSON backup from Settings/History regularly. Data does **not** automatically sync between devices.
