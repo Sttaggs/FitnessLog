@@ -109,8 +109,8 @@ function renderWorkout() {
  const s=state.session;
  return `<div class="card"><div class="row between" style="margin-bottom:14px"><span class="badge">${s.status==='active'?'In progress':'Saved session'}</span><button class="btn ghost small" data-action="close-workout">← Back</button></div>
  <div class="field-row">${textField('Workout name','session','name',s.name||'Workout')}${textField('Date','session','date',s.date,'date')}</div>
- <div style="margin-top:10px" class="field-row">${numberField('Overall intensity / 10','session','intensity',s.intensity,'max="10"')}${numberField('Overall fatigue / 10','session','fatigue',s.fatigue,'max="10"')}</div>
- <div style="margin-top:10px">${memoField('Session notes','session','notes',s.notes)}</div></div>
+ <details class="session-details"><summary>Workout intensity, fatigue and notes</summary><div class="field-row" style="margin-top:10px">${numberField('Overall intensity / 10','session','intensity',s.intensity,'min="1" max="10"')}${numberField('Overall fatigue / 10','session','fatigue',s.fatigue,'min="1" max="10"')}</div>
+ <div style="margin-top:10px">${memoField('Session notes','session','notes',s.notes)}</div></details></div>
  <div class="section-heading"><h2>Resistance exercises</h2><span class="pill">${s.exercises.length}</span></div>
  ${s.exercises.map((x,i)=>renderExercise(x,i)).join('')}
  <div class="card"><form data-form="add-exercise" class="stack"><div class="field"><label>Add any exercise</label><input name="exerciseName" list="exercise-suggestions" placeholder="e.g. Machine Lateral Raise" required autocomplete="off" enterkeyhint="done"></div><datalist id="exercise-suggestions">${[...new Set([...state.exercises.map(x=>x.name),...suggestions])].map(n=>`<option value="${e(n)}"></option>`).join('')}</datalist><button class="btn secondary wide" type="submit">＋ Add exercise</button></form></div>
