@@ -8,7 +8,6 @@ const e = escapeHtml;
 const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
-const suggestions = ['Shoulder Press','Pec Fly','Lat Pulldown','Bent-Over Row','Dumbbell Lateral Raise','Biceps Curl','Triceps Pushdown','Squat','Leg Press','Romanian Deadlift','Plank'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
 const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:''};
 
@@ -91,6 +90,18 @@ function closeExerciseSuggestions(){
  const list=document.getElementById('exercise-search-options');
  if(list){list.hidden=true;list.innerHTML='';}
  if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}
+}
+async function resolveExerciseInput(name){
+ const matches=exerciseMatches(name);
+ const exact=matches.find(match=>normalizeName(match.exercise.name)===normalizeName(name));
+ if(exact)return exact.exercise;
+ const similar=matches.some(match=>match.similar);
+ const shortMatches=normalizeName(name).length<=3&&matches.length>0;
+ if(similar||shortMatches){
+  const choices=matches.slice(0,3).map(match=>match.exercise.name).join(', ');
+  if(!confirm('Similar saved exercises: '+choices+'.\n\nCreate "'+name+'" as a separate exercise anyway?\n\nChoose Cancel to select an existing exercise instead.'))return null;
+ }
+ return ensureExercise(name);
 }
 async function addExerciseToWorkout(master){
  if(!master||!state.session)return;
@@ -576,8 +587,8 @@ document.addEventListener('change',async ev=>{
  }
  if(scope==='filter'){state[field]=value;return;}
  if(field==='name'&&scope.startsWith('exercise:')) {
-  const master=await ensureExercise(value);
-  if(!master){ev.target.value=target.name;toast('Enter an exercise name');return;}
+  const master=await resolveExerciseInput(value);
+  if(!master){ev.target.value=target.name;return;}
   target.name=master.name;
   target.exerciseId=master.id;
   await saveSession();
@@ -592,26 +603,16 @@ document.addEventListener('submit',async ev=>{
  const data=new FormData(form);
  if(form.dataset.form==='add-exercise'){
   const name=String(data.get('exerciseName')||'').trim();if(!name)return;
-  const matches=exerciseMatches(name);
-  const exact=matches.find(match=>normalizeName(match.exercise.name)===normalizeName(name));
-  if(exact){await addExerciseToWorkout(exact.exercise);return;}
-  const likely=matches.filter(match=>match.similar);
-  const shortMatches=normalizeName(name).length<=3&&matches.length>0;
-  if(likely.length||shortMatches){
-   const choices=matches.slice(0,3).map(match=>match.exercise.name).join(', ');
-   if(!confirm('Similar saved exercises: '+choices+'.\n\nCreate "'+name+'" as a separate exercise anyway?\n\nChoose Cancel to select a saved exercise instead.')){
-    document.getElementById('exercise-entry-name')?.focus();
-    return;
-   }
-  }
-  const master=await ensureExercise(name);
+  const master=await resolveExerciseInput(name);
+  if(!master){document.getElementById('exercise-entry-name')?.focus();return;}
   await addExerciseToWorkout(master);
   return;
  }
  if(form.dataset.form==='library'){
   const name=String(data.get('name')||'').trim();if(!name)return;
   const wasSaved=state.exercises.some(x=>normalizeName(x.name)===normalizeName(name));
-  const master=await ensureExercise(name);
+  const master=await resolveExerciseInput(name);
+  if(!master){form.querySelector('input[name="name"]')?.focus();return;}
   if(!wasSaved){master.muscle=String(data.get('muscle')||'');master.equipment=String(data.get('equipment')||'');await put('exercises',master);}
   await render();toast(wasSaved?'Exercise already exists':'Exercise saved');
  }
