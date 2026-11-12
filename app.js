@@ -494,12 +494,10 @@ async function action(name,el) {
  if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-set'){
   const x=s.exercises.find(x=>x.id===el.dataset.id);
-  const priorSession=previousPerformance(x.exerciseId,s.id,s.date);
-  const referencedSet=priorSession?.sets?.[x.sets.length];
-  const currentLast=x.sets.at(-1);
-  // Historical values remain hints, not saved results. When there is no
-  // corresponding historical set, preserve the current-session copy shortcut.
-  x.sets.push(hasSetData(referencedSet)?blankSet():{id:newId(),weight:currentLast?.weight??'',reps:currentLast?.reps??'',rpe:currentLast?.rpe??''});
+  // The new set starts with no recorded measurements. Its weight, reps and
+  // RPE placeholders are derived solely from the same index of the previous
+  // completed workout, when available, by renderExercise().
+  x.sets.push(blankSet());
   state.expanded.add(x.id);
   await saveSession();
   await render();
