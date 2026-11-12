@@ -41,7 +41,8 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Add exercises in one step; new names are automatically saved and linked to their previous and future workout records
 - Automatically open the first optional set after adding an exercise
 - When adding a new exercise, collapse earlier exercise cards so only the newest entry remains expanded
-- Adding another set copies the previous set's weight, repetitions, and RPE into editable fields
+- Adding a new set shows the corresponding set's previous-workout weight, reps, and RPE as non-saved placeholders when historical values exist; otherwise, the previous current-session set remains a copy shortcut
+- A collapsed Previous performance section displays the previous completed workout's full exercise sets and notes
 - Live exercise lookup searches saved exercise names by partial matches (including middle words), capitalization-insensitive matching, and likely spelling corrections
 - Selecting an existing suggestion uses its permanent exercise ID; similar names require confirmation before a separate record is created
 - Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session

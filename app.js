@@ -130,11 +130,11 @@ async function ensureExercise(name) {
 }
 function previousPerformance(exerciseId,currentSessionId,currentDate) {
  for(const s of state.sessions) {
-  if(s.id===currentSessionId || (currentDate && s.date>currentDate))continue;
+  if(s.id===currentSessionId || s.status!=='finished' || (currentDate && s.date>currentDate))continue;
   const x=(s.exercises||[]).find(ex=>ex.exerciseId===exerciseId);
   if(x) {
-   const populated=recordedSets(x);
-   return {date:s.date, sets:populated, total:x.sets?.length||0};
+   // Preserve set indices even when earlier sets have no recorded details.
+   return {date:s.date, sets:x.sets||[], notes:x.notes||''};
   }
  }
  return null;
@@ -214,12 +214,13 @@ function renderWorkout() {
   <p class="helper">Deleting removes this workout from your history and progress statistics.</p>
  </div></div>`;
 }
+const historicalField = (set,key,fallback) => {
+ const value=set?.[key];
+ return value!==''&&value!==null&&value!==undefined?String(value):fallback;
+};
 function renderExercise(x,i) {
  const isOpen=state.expanded.has(x.id);
  const prev=x.exerciseId?previousPerformance(x.exerciseId,state.session?.id,state.session?.date):null;
- const prevText=prev ? (prev.sets.length ?
-  prev.sets.slice(0,3).map(set=>[set.weight!==''&&set.weight!=null?set.weight+' lb':null,set.reps!==''&&set.reps!=null?set.reps+' reps':null,set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:null].filter(Boolean).join(' · ')).join(' | ') :
-  'Exercise previously logged without detailed sets') : '';
  const scope='exercise:'+x.id;
  const type=x.technique||'Standard';
  return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
@@ -229,14 +230,19 @@ function renderExercise(x,i) {
  ${textField('Exercise name',scope,'name',x.name)}
  <div class="field"><label>Technique</label><div class="technique-label">${e(type)}</div></div>
  </div>
- ${prev?`<p class="previous-performance"><strong>Previous · ${displayDate(prev.date)}</strong><span>${e(prevText)}</span></p>`:''}
+ ${prev?`<details class="historical-detail"><summary>Previous performance · ${displayDate(prev.date)}</summary>
+ ${prev.sets.length?`<div class="previous-sets"><div class="previous-sets-heading"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>
+ ${prev.sets.map((set,j)=>`<div class="previous-sets-row"><span>${j+1}</span><span>${e(historicalField(set,'weight','—'))}</span><span>${e(historicalField(set,'reps','—'))}</span><span>${e(historicalField(set,'rpe','—'))}</span></div>`).join('')}</div>`:'<p class="helper">No sets recorded.</p>'}
+ ${prev.notes?`<p class="helper">Notes: ${e(prev.notes)}</p>`:''}
+ </details>`:''}
  <div class="set-grid set-heading"><span>SET</span><span>WEIGHT (LB)</span><span>REPS</span><span>RPE</span><span></span></div>
  ${(x.sets||[]).map((set,j)=>`<div class="set-grid">
  <span class="set-number">${j+1}</span>
- <input aria-label="Set ${j+1} weight in pounds" inputmode="decimal" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="lb">
- <input aria-label="Set ${j+1} repetitions" inputmode="numeric" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="—">
- <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="1–10">
+ <input aria-label="Set ${j+1} weight in pounds" inputmode="decimal" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="${e(historicalField(prev?.sets?.[j],'weight','lb'))}">
+ <input aria-label="Set ${j+1} repetitions" inputmode="numeric" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="${e(historicalField(prev?.sets?.[j],'reps','—'))}">
+ <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="${e(historicalField(prev?.sets?.[j],'rpe','1–10'))}">
  <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>`).join('')}
+ ${prev?'<p class="helper historical-hint">Faded values show last time; only typed values are saved.</p>':''}
  <div class="row between wrap" style="margin-top:12px">
  <button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button>
  <button class="btn danger small" data-action="delete-exercise" data-id="${x.id}">Remove exercise</button>
@@ -486,7 +492,20 @@ async function action(name,el) {
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
- if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);const previous=x.sets.at(-1);x.sets.push({id:newId(),weight:previous?.weight??'',reps:previous?.reps??'',rpe:previous?.rpe??''});state.expanded.add(x.id);await saveSession();await render();document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();return;}
+ if(name==='add-set'){
+  const x=s.exercises.find(x=>x.id===el.dataset.id);
+  const priorSession=previousPerformance(x.exerciseId,s.id,s.date);
+  const referencedSet=priorSession?.sets?.[x.sets.length];
+  const currentLast=x.sets.at(-1);
+  // Historical values remain hints, not saved results. When there is no
+  // corresponding historical set, preserve the current-session copy shortcut.
+  x.sets.push(hasSetData(referencedSet)?blankSet():{id:newId(),weight:currentLast?.weight??'',reps:currentLast?.reps??'',rpe:currentLast?.rpe??''});
+  state.expanded.add(x.id);
+  await saveSession();
+  await render();
+  document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();
+  return;
+ }
  if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
