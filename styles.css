@@ -144,3 +144,26 @@
 .progress-overview>summary{display:flex;align-items:center;justify-content:space-between;min-height:43px;font-weight:700;cursor:pointer}
 .progress-overview[open]>summary{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:12px}
 .progress-overview .progress-summary{margin:8px 0}
+
+
+/* Local, optional rest countdown. Keeps timers distinct from logged set values. */
+.rest-timer{margin:12px 0 10px;background:#17241e;border:1px solid #375043;border-radius:12px;padding:11px}
+.rest-timer [hidden]{display:none!important}
+.rest-timer-top,.rest-timer-main{display:flex;align-items:center;justify-content:space-between;gap:9px}
+.rest-title{font-size:12px;color:var(--accent);font-weight:750}
+.rest-timer-status{font-size:11px;color:var(--muted);text-align:right;max-width:60%;overflow-wrap:anywhere}
+.rest-timer-main{margin:10px 0;flex-wrap:wrap}
+.rest-timer-clock{font-size:29px;letter-spacing:-.035em;font-weight:750;line-height:1.1;font-variant-numeric:tabular-nums}
+.rest-timer-buttons{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;max-width:75%}
+.rest-timer-buttons .btn{padding:7px 11px;min-height:35px}
+.rest-timer-presets{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.rest-preset{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:11px;min-height:34px;padding:6px 9px}
+.rest-preset.selected{color:var(--accent);background:#263b2a;border-color:#6c9860}
+.rest-timer-presets .btn{min-height:34px;padding:6px 9px}
+.rest-iphone{padding-top:9px;margin-top:11px;border-top:1px solid #375043}
+.rest-iphone>.btn{font-size:12px}
+.rest-iphone-setup{margin-top:8px;color:var(--muted);font-size:11px;line-height:1.5}
+.rest-iphone-setup>summary{cursor:pointer;color:var(--muted);padding:5px 0;min-height:26px;font-weight:650}
+.rest-iphone-setup p{line-height:1.55;margin:8px 0}
+.rest-iphone-setup a{display:inline-block;color:var(--accent);margin:2px 0 8px}
+@media(max-width:375px){.rest-timer{padding:9px}.rest-timer-clock{font-size:26px}.rest-timer-buttons .btn{padding:6px 8px;font-size:11px}.rest-preset{padding:6px 7px}}

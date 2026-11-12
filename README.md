@@ -45,6 +45,9 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - A compact Previous performance row with a visible chevron stays closed until tapped, then reveals the previous completed workout's sets and notes; tap again to hide them
 - Live exercise lookup searches saved exercise names by partial matches (including middle words), capitalization-insensitive matching, and likely spelling corrections
 - Selecting an existing suggestion uses its permanent exercise ID; similar names require confirmation before a separate record is created
+- Optional rest timer at the top of each expanded exercise: adjustable presets, 15-second increments, start/pause/resume/reset, and an in-app completion sound when the page remains active
+- Rest countdowns and per-exercise preferences use localStorage, not workout records; timer values are not recorded in history or exports
+- On iPhone, a Start iPhone lock-screen alarm control invokes a user-created Apple Shortcut to start a real iOS Clock timer. A web countdown alone cannot reliably alert after the phone suspends or closes the web app. The native Clock timer and the in-app timer run independently
 - Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
 - Create sets independently per exercise; quick exercise-only logging is valid
 - Standard sets are the active format; other technique formats are deferred until designed
@@ -59,6 +62,20 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 Exercise Analytics lets you choose a saved exercise and chart the highest recorded weight, highest repetitions, or average set RPE in each completed workout. You can select a rolling date range, filter repetition trends at a specific recorded weight, and expand dated workout entries to inspect individual sets. Missing values are excluded from calculations; there is no volume-load metric or automatic progressive-overload prescription.
 
 Progress Photos are dated Front/Side/Back photos saved as compressed JPEGs in a separate local IndexedDB store. The Progress page provides a collapsed add-photo form, a saved-photo gallery, and same-view side-by-side or adjustable overlay comparisons. All photos remain local to the current device unless the user deliberately exports them. Standard workout CSV, JSON, and PDF exports do **not** include photos. Settings has a separate explicit **Download backup including photos** action; photo backups can be large and must be protected like personal files. Restoring an older workout-only backup does not erase photos. Uninstalling the app or clearing website storage can permanently erase locally stored photos.
+
+## iPhone lock-screen rest alerts (zero cost)
+
+A website/PWA cannot reliably run its own JavaScript and sound an alarm when iOS suspends or closes it. FitnessLog offers a native Clock timer launch via a one-time Apple Shortcuts setup, with no third-party server, subscription, or account.
+
+1. On the iPhone, open Apple's **Shortcuts** app and create a shortcut named exactly **FitnessLog Rest Timer**.
+2. Add the action **Get Numbers from Input** using the shortcut's input, typically the **Shortcut Input** variable.
+3. Add Apple's **Start Timer** action, set its duration to the extracted number, and select **seconds** as the unit.
+4. Save the shortcut. Run it once from Shortcuts if iOS asks you to approve Clock access.
+5. In FitnessLog, choose a rest duration and tap **Start iPhone lock-screen alarm**. The app sends the duration through Apple's documented Shortcuts URL scheme. Approve opening Shortcuts if prompted.
+
+Apple's reference: https://support.apple.com/guide/shortcuts/apd624386f42/ios
+
+A native iPhone Clock timer can continue and sound its alarm even after FitnessLog is backgrounded or the screen is locked, subject to iOS alarm settings. This launch path cannot be tested remotely from GitHub, and some iOS/PWA launch contexts may require opening FitnessLog in Safari instead. The **Start in app** option remains available without the shortcut, but its beep cannot be guaranteed when the web app is suspended. Shortcuts are opt-in; no shortcut is automatically installed.
 
 ## Roadmap
 - Structured superset groups and advanced nested techniques
