@@ -1,4 +1,7 @@
-import {list, get, put, remove, replaceAll, newId} from './db.js';
+import {list, get, put, remove, replaceStores, newId} from './db.js';
+import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
+import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
+import {renderProgressView} from './progress-ui.js';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -9,7 +12,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, progressExercise:'', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -181,8 +184,21 @@ async function flushSave() {
  saveTimer=null;
  await saveSession();
 }
+const photoUrls=new Map();
+async function refreshPhotos() {
+ state.photos=(await list('photos')).sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||'').localeCompare(a.createdAt||''));
+ state.photosLoaded=true;
+ const ids=new Set(state.photos.map(photo=>photo.id));
+ for(const [id,url] of photoUrls)if(!ids.has(id)){URL.revokeObjectURL(url);photoUrls.delete(id);}
+}
+function photoUrl(photo) {
+ if(!photo?.blob)return '';
+ if(!photoUrls.has(photo.id))photoUrls.set(photo.id,URL.createObjectURL(photo.blob));
+ return photoUrls.get(photo.id);
+}
 async function render() {
  await refreshData();
+ if(state.tab==='progress' && !state.session && !state.report && !state.photosLoaded)await refreshPhotos();
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
  title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings'})[state.tab]||'FitnessLog';
  main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings}[state.tab]||renderHome)();
@@ -367,15 +383,7 @@ function renderHistory() {
  </details>`;
 }
 function renderProgress() {
- const sessions=state.sessions.filter(s=>s.status==='finished');const start=new Date();start.setDate(start.getDate()-7);
- const recent=sessions.filter(s=>new Date(s.date+'T12:00:00')>=start);
- const ratings=sessions.map(s=>Number(s.intensity)).filter(n=>n>0);
- const count=sessions.reduce((acc,s)=>acc+s.exercises.length,0);
- const allExercises=new Map();
- for(const s of sessions)for(const x of s.exercises){const key=x.exerciseId||normalizeName(x.name);const item=allExercises.get(key)||{name:x.name,count:0};item.count++;allExercises.set(key,item);}
- const top=[...allExercises.values()].sort((a,b)=>b.count-a.count).slice(0,7);
- return `<div class="grid2"><div class="stat"><span>Finished sessions</span><strong>${sessions.length}</strong></div><div class="stat"><span>Recent 7 days</span><strong>${recent.length}</strong></div><div class="stat"><span>Exercise entries</span><strong>${count}</strong></div><div class="stat"><span>Average effort</span><strong>${ratings.length?(ratings.reduce((a,b)=>a+b,0)/ratings.length).toFixed(1):'—'}</strong></div></div>
- <div class="section-heading"><h2>Most logged exercises</h2></div><div class="card">${top.length?top.map(({name,count:n})=>`<div style="margin-bottom:15px"><div class="row between"><span>${e(name)}</span><span class="helper">${n} entries</span></div><div class="line" style="margin-top:7px"><span style="width:${Math.round(n/top[0].count*100)}%"></span></div></div>`).join(''):'<div class="empty">Log workouts to see your activity trends.</div>'}<p class="helper">Exercise frequency is not equivalent to training volume or hypertrophy. Missing measurements are not treated as zero.</p></div>`;
+ return renderProgressView({state,e,displayDate,photoUrl});
 }
 function renderLibrary() {
  if(state.libraryDetail) {
@@ -403,8 +411,17 @@ function renderLibrary() {
  <button class="btn small secondary" data-action="view-library" data-id="${x.id}">History</button></div></div>`).join(''):'<div class="card empty">Your exercises will appear here automatically as you log them.</div>'}`;
 }
 function renderSettings() {
- return `<div class="card"><h2>Data and privacy</h2><p>Your training records are stored locally in this browser using IndexedDB. They are not uploaded to GitHub or Cloudflare.</p><p class="notice">Deleting browser data or uninstalling the app can permanently remove records. Export a full backup regularly.</p><div class="stack" style="margin-top:15px">${button('Download full JSON backup','full-backup','wide')}${button('Restore from JSON backup','restore','secondary wide')}<input id="restore-file" type="file" accept="application/json,.json" hidden></div></div>
- <div class="card"><h2>About this version</h2><p class="muted">Initial release: flexible exercise logging, cardio, sauna, history, simple analytics, and exports. Advanced nested techniques, photo comparisons, body measurements, and timers are planned.</p></div>`;
+ return `<div class="card"><h2>Data and privacy</h2>
+ <p>Workout data and progress photos are stored only in this browser on this device. They are never uploaded to GitHub or Cloudflare.</p>
+ <p class="notice">Clearing browser data or uninstalling the app can permanently remove workouts and photos. Back up regularly.</p>
+ <div class="stack" style="margin-top:15px">
+ ${button('Download workout backup (no photos)','full-backup','wide')}
+ ${button('Download backup including photos','export-photos-backup','secondary wide')}
+ ${button('Restore JSON backup','restore','secondary wide')}
+ <input id="restore-file" type="file" accept="application/json,.json" hidden>
+ </div>
+ <p class="helper">Photo-inclusive backup is optional and may be large. Photo files are included only when you explicitly choose the photo-inclusive option. Restoring a workout-only backup preserves existing photos on this device.</p></div>
+ <div class="card"><h2>About</h2><p class="muted">Exercise analytics track recorded weight, repetitions, and RPE. Progress photos are private, dated, and comparable by view. Advanced training techniques and body measurements remain planned.</p></div>`;
 }
 function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
@@ -451,8 +468,28 @@ async function restoreBackup(file) {
  await flushSave();
  const parsed=JSON.parse(await file.text());
  if(parsed.app!=='FitnessLog'||!Array.isArray(parsed.sessions)||!Array.isArray(parsed.exercises))throw Error('Unsupported backup format');
- if(!confirm('Restore this backup? This will REPLACE all workouts and custom exercises on this device.'))return;
- await replaceAll('sessions',parsed.sessions);await replaceAll('exercises',parsed.exercises);state.session=null;state.tab='home';state.libraryDetail=null;await linkExistingExercises();await render();toast('Backup restored');
+ if(parsed.photos!==undefined&&!Array.isArray(parsed.photos))throw Error('Invalid photo list');
+ const hasPhotoPayload=Array.isArray(parsed.photos);
+ const question=hasPhotoPayload?
+  'Restore this backup? This will REPLACE all workouts, exercise library records, and saved progress photos on this device.':
+  'Restore this workout backup? This will REPLACE workouts and exercise library records. Your existing progress photos will be kept.';
+ if(!confirm(question))return;
+ // Validate and decode every optional photo before starting the atomic DB transaction.
+ const photos=hasPhotoPayload?await restorePhotos(parsed.photos):null;
+ const stores={sessions:parsed.sessions,exercises:parsed.exercises};
+ if(photos!==null)stores.photos=photos;
+ await replaceStores(stores);
+ for(const url of photoUrls.values())URL.revokeObjectURL(url);
+ photoUrls.clear();
+ state.photosLoaded=false;
+ state.photos=[];
+ state.session=null;
+ state.tab='home';
+ state.libraryDetail=null;
+ state.progressExercise='';
+ await linkExistingExercises();
+ await render();
+ toast('Backup restored');
 }
 async function action(name,el) {
  const s=state.session;
@@ -466,6 +503,30 @@ async function action(name,el) {
  if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
  if(name==='close-workout'){await flushSave();state.session=null;state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
+ if(name==='progress-metric'){
+  if(['weight','reps','rpe'].includes(el.dataset.metric)){
+   state.progressMetric=el.dataset.metric;
+   await render();
+  }
+  return;
+ }
+ if(name==='photo-mode'){
+  state.photoMode=el.dataset.mode==='overlay'?'overlay':'side';
+  await render();
+  return;
+ }
+ if(name==='delete-photo'){
+  const photo=state.photos.find(p=>p.id===el.dataset.id);
+  if(!photo)return;
+  if(!confirm('Permanently delete the '+photo.view.toLowerCase()+' progress photo from '+displayDate(photo.date)+'?'))return;
+  await remove('photos',photo.id);
+  state.photosLoaded=false;
+  state.photoA=state.photoA===photo.id?'':state.photoA;
+  state.photoB=state.photoB===photo.id?'':state.photoB;
+  await render();
+  toast('Photo deleted');
+  return;
+ }
  if(name==='history-view'){state.historyView=el.dataset.view==='calendar'?'calendar':'list';return render();}
  if(name==='history-prev-month'||name==='history-next-month'){
   const [year,month]=state.historyMonth.split('-').map(Number);
@@ -529,7 +590,18 @@ async function action(name,el) {
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
  if(name==='delete-activity'){s.activities=s.activities.filter(a=>a.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
- if(name==='export-json'||name==='full-backup'){const full=name==='full-backup'||(!state.start&&!state.end);download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:1,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises},null,2),'application/json');return toast('JSON file downloaded');}
+ if(name==='export-json'||name==='full-backup'){
+  const full=name==='full-backup'||(!state.start&&!state.end);
+  download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises},null,2),'application/json');
+  return toast('Workout backup downloaded (photos excluded)');
+ }
+ if(name==='export-photos-backup'){
+  const photos=await list('photos');
+  if(!confirm('Include '+photos.length+' private progress photos in the downloaded JSON backup? This file may be large and contain sensitive photographs.'))return;
+  const payload={app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:state.sessions,exercises:state.exercises,photos:await photosForBackup(photos)};
+  download('fitnesslog-with-photos-'+today()+'.json',JSON.stringify(payload),'application/json');
+  return toast('Photo-inclusive backup downloaded');
+ }
  if(name==='export-csv'){exportCsv();return toast('CSV downloaded');}
  if(name==='report'){if(state.start&&state.end&&state.start>state.end)return toast('Invalid date range');state.report=true;return render();}
  if(name==='report-close'){state.report=false;return render();}
@@ -592,6 +664,12 @@ document.addEventListener('click',ev=>{
  if(!ev.target.closest('.exercise-search-field'))closeExerciseSuggestions();
 });
 document.addEventListener('input',ev=>{
+ if(ev.target.id==='photo-overlay-range'){
+  state.overlayPercent=Math.max(0,Math.min(100,Number(ev.target.value)));
+  const image=document.getElementById('photo-overlay-after');
+  if(image)image.style.clipPath='inset(0 '+(100-state.overlayPercent)+'% 0 0)';
+  return;
+ }
  const {scope,field}=ev.target.dataset||{};
  if(!scope||!field||scope==='filter') {
   if(scope==='filter')state[field]=ev.target.value;
@@ -611,6 +689,18 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ const progress=ev.target.dataset?.progressControl;
+ if(progress){
+  const value=ev.target.value;
+  if(progress==='exercise'){state.progressExercise=value;state.progressWeight='all';}
+  else if(progress==='range'&&['30','90','365','all'].includes(value))state.progressRange=value;
+  else if(progress==='weightFilter')state.progressWeight=value;
+  else if(progress==='photoView'){state.photoView=value;state.photoA='';state.photoB='';}
+  else if(progress==='photoA')state.photoA=value;
+  else if(progress==='photoB')state.photoB=value;
+  await render();
+  return;
+ }
  if(ev.target.id==='restore-file'){
   const f=ev.target.files?.[0];
   if(f)try{await restoreBackup(f);}catch(err){console.error(err);toast('Invalid or unreadable backup');}
@@ -640,6 +730,29 @@ document.addEventListener('change',async ev=>{
 document.addEventListener('submit',async ev=>{
  const form=ev.target.closest('[data-form]');if(!form)return;ev.preventDefault();
  const data=new FormData(form);
+ if(form.dataset.form==='photo-upload'){
+  const submitButton=form.querySelector('button[type="submit"]');
+  if(submitButton)submitButton.disabled=true;
+  try{
+   const file=form.querySelector('input[name="photoFile"]')?.files?.[0];
+   const date=String(data.get('photoDate')||'');
+   const view=String(data.get('photoView')||'');
+   if(!file)throw new Error('Choose a photo.');
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!['Front','Side','Back'].includes(view))throw new Error('Choose a valid date and view.');
+   const blob=await shrinkPhoto(file);
+   await put('photos',{id:newId(),date,view,createdAt:new Date().toISOString(),blob});
+   state.photosLoaded=false;
+   state.photoView=view;
+   state.photoA='';
+   state.photoB='';
+   await render();
+   toast('Progress photo saved privately');
+  }catch(err){
+   console.error(err);
+   toast(err?.message||'Could not save photo');
+  }finally{if(submitButton?.isConnected)submitButton.disabled=false;}
+  return;
+ }
  if(form.dataset.form==='add-exercise'){
   const name=String(data.get('exerciseName')||'').trim();if(!name)return;
   const master=await resolveExerciseInput(name);

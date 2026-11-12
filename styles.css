@@ -86,3 +86,61 @@
 .previous-panel .previous-sets{padding:10px 12px}
 .previous-panel .previous-sets-row{font-variant-numeric:tabular-nums}
 .previous-panel .previous-notes{margin:0 12px 12px;overflow-wrap:anywhere}
+
+
+/* Exercise-specific progress analytics. No volume load metrics. */
+.progress-card{overflow:hidden}
+.progress-card>.helper:first-child{margin:0 0 13px}
+.progress-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:15px 0}
+.progress-stat{background:var(--surface2);border-radius:11px;padding:12px;min-width:0}
+.progress-stat span{display:block;color:var(--muted);font-size:11px}
+.progress-stat strong{display:inline-block;font-size:22px;line-height:1.45;font-variant-numeric:tabular-nums}
+.progress-stat small{font-size:11px;color:var(--muted);margin-left:4px}
+.progress-metric-toggle,.photo-mode-toggle{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:4px;border:1px solid var(--border);background:var(--surface2);border-radius:12px;margin:16px 0 12px}
+.progress-metric-toggle button,.photo-mode-toggle button{min-height:42px;padding:7px 4px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:12px;font-weight:700}
+.progress-metric-toggle button.active,.photo-mode-toggle button.active{color:#182413;background:var(--accent)}
+.progress-controls,.photo-compare-selectors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:13px 0}
+.progress-controls .field,.photo-compare-selectors .field{font-size:12px;color:var(--muted);font-weight:650}
+.progress-chart{margin:14px 0 8px;border:1px solid var(--border);background:#141b20;border-radius:12px;padding:8px 5px}
+.progress-trend-svg{display:block;width:100%;height:auto;max-height:290px}
+.progress-chart-note,.chart-change{font-size:12px;line-height:1.5;color:var(--muted);margin:9px 1px}
+.chart-change{color:var(--accent)}
+.progress-session-list{display:grid;gap:8px}
+.progress-session{border:1px solid var(--border);border-radius:11px;background:var(--surface2)}
+.progress-session>summary{display:flex;justify-content:space-between;gap:12px;align-items:center;cursor:pointer;padding:12px;font-size:13px;line-height:1.4}
+.progress-session-count{color:var(--muted);font-size:11px;white-space:nowrap}
+.progress-session-body{border-top:1px solid var(--border);padding:10px 12px 13px}
+.progress-session-table{margin-bottom:11px}
+.progress-session-head,.progress-session-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;text-align:center;align-items:center}
+.progress-session-head{color:var(--muted);font-size:10px;font-weight:700;padding:6px 0}
+.progress-session-row{padding:8px 0;border-top:1px solid var(--border);font-size:13px;font-variant-numeric:tabular-nums}
+.photo-add{border:1px solid var(--border);border-radius:12px;margin:13px 0 17px;background:var(--surface2)}
+.photo-add>summary{cursor:pointer;color:var(--accent);padding:12px 14px;min-height:46px;font-size:14px;font-weight:700}
+.photo-add[open]>summary{border-bottom:1px solid var(--border)}
+.photo-upload-form{padding:13px}
+.photo-upload-form input[type=file]{height:auto;padding:10px;font-size:13px}
+.photo-comparison-controls{margin:15px 0 8px;max-width:260px}
+.photo-mode-toggle{grid-template-columns:repeat(2,minmax(0,1fr));margin:12px 0}
+.photo-compare-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.photo-comparison-item{min-width:0;margin:0;background:#0c0f13;border:1px solid var(--border);border-radius:11px;overflow:hidden}
+.photo-comparison-item img{display:block;aspect-ratio:3/4;width:100%;object-fit:contain}
+.photo-comparison-item figcaption{color:var(--muted);font-size:11px;padding:9px 7px;line-height:1.4}
+.photo-overlay-frame{position:relative;aspect-ratio:3/4;max-height:560px;margin:12px auto;background:#0c0f13;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.photo-overlay-frame>img,.photo-overlay-after img{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.photo-overlay-after{position:absolute;inset:0;pointer-events:none}
+.photo-overlay-slider{display:block;margin:12px 0 16px;color:var(--muted);font-size:12px}
+.photo-overlay-slider input{display:block;margin-top:8px;padding:0;accent-color:var(--accent)}
+.photo-gallery{margin-top:22px;border-top:1px solid var(--border);padding-top:12px}
+.photo-gallery>summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:700;min-height:42px;padding:10px 0}
+.photo-gallery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:10px}
+.photo-gallery-item{background:var(--surface2);border-radius:11px;overflow:hidden;border:1px solid var(--border)}
+.photo-gallery-item img{display:block;aspect-ratio:3/4;width:100%;object-fit:contain;background:#0e1116}
+.photo-gallery-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px;font-size:11px;color:var(--muted)}
+.photo-gallery-meta button{min-height:32px}
+@media(min-width:620px){.progress-summary{grid-template-columns:repeat(4,minmax(0,1fr))}.photo-gallery-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.photo-compare-pair{gap:14px}}
+@media(max-width:370px){.progress-metric-toggle button{font-size:11px}.progress-stat strong{font-size:19px}.progress-session-count{font-size:10px}}
+
+.progress-overview{margin:12px 0 26px}
+.progress-overview>summary{display:flex;align-items:center;justify-content:space-between;min-height:43px;font-weight:700;cursor:pointer}
+.progress-overview[open]>summary{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:12px}
+.progress-overview .progress-summary{margin:8px 0}
