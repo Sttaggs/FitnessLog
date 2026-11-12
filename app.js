@@ -503,6 +503,30 @@ async function action(name,el) {
  if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
  if(name==='close-workout'){await flushSave();state.session=null;state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
+ if(name==='progress-metric'){
+  if(['weight','reps','rpe'].includes(el.dataset.metric)){
+   state.progressMetric=el.dataset.metric;
+   await render();
+  }
+  return;
+ }
+ if(name==='photo-mode'){
+  state.photoMode=el.dataset.mode==='overlay'?'overlay':'side';
+  await render();
+  return;
+ }
+ if(name==='delete-photo'){
+  const photo=state.photos.find(p=>p.id===el.dataset.id);
+  if(!photo)return;
+  if(!confirm('Permanently delete the '+photo.view.toLowerCase()+' progress photo from '+displayDate(photo.date)+'?'))return;
+  await remove('photos',photo.id);
+  state.photosLoaded=false;
+  state.photoA=state.photoA===photo.id?'':state.photoA;
+  state.photoB=state.photoB===photo.id?'':state.photoB;
+  await render();
+  toast('Photo deleted');
+  return;
+ }
  if(name==='history-view'){state.historyView=el.dataset.view==='calendar'?'calendar':'list';return render();}
  if(name==='history-prev-month'||name==='history-next-month'){
   const [year,month]=state.historyMonth.split('-').map(Number);
@@ -640,6 +664,12 @@ document.addEventListener('click',ev=>{
  if(!ev.target.closest('.exercise-search-field'))closeExerciseSuggestions();
 });
 document.addEventListener('input',ev=>{
+ if(ev.target.id==='photo-overlay-range'){
+  state.overlayPercent=Math.max(0,Math.min(100,Number(ev.target.value)));
+  const image=document.getElementById('photo-overlay-after');
+  if(image)image.style.clipPath='inset(0 '+(100-state.overlayPercent)+'% 0 0)';
+  return;
+ }
  const {scope,field}=ev.target.dataset||{};
  if(!scope||!field||scope==='filter') {
   if(scope==='filter')state[field]=ev.target.value;
@@ -659,6 +689,18 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ const progress=ev.target.dataset?.progressControl;
+ if(progress){
+  const value=ev.target.value;
+  if(progress==='exercise'){state.progressExercise=value;state.progressWeight='all';}
+  else if(progress==='range'&&['30','90','365','all'].includes(value))state.progressRange=value;
+  else if(progress==='weightFilter')state.progressWeight=value;
+  else if(progress==='photoView'){state.photoView=value;state.photoA='';state.photoB='';}
+  else if(progress==='photoA')state.photoA=value;
+  else if(progress==='photoB')state.photoB=value;
+  await render();
+  return;
+ }
  if(ev.target.id==='restore-file'){
   const f=ev.target.files?.[0];
   if(f)try{await restoreBackup(f);}catch(err){console.error(err);toast('Invalid or unreadable backup');}
@@ -688,6 +730,29 @@ document.addEventListener('change',async ev=>{
 document.addEventListener('submit',async ev=>{
  const form=ev.target.closest('[data-form]');if(!form)return;ev.preventDefault();
  const data=new FormData(form);
+ if(form.dataset.form==='photo-upload'){
+  const submitButton=form.querySelector('button[type="submit"]');
+  if(submitButton)submitButton.disabled=true;
+  try{
+   const file=form.querySelector('input[name="photoFile"]')?.files?.[0];
+   const date=String(data.get('photoDate')||'');
+   const view=String(data.get('photoView')||'');
+   if(!file)throw new Error('Choose a photo.');
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!['Front','Side','Back'].includes(view))throw new Error('Choose a valid date and view.');
+   const blob=await shrinkPhoto(file);
+   await put('photos',{id:newId(),date,view,createdAt:new Date().toISOString(),blob});
+   state.photosLoaded=false;
+   state.photoView=view;
+   state.photoA='';
+   state.photoB='';
+   await render();
+   toast('Progress photo saved privately');
+  }catch(err){
+   console.error(err);
+   toast(err?.message||'Could not save photo');
+  }finally{if(submitButton?.isConnected)submitButton.disabled=false;}
+  return;
+ }
  if(form.dataset.form==='add-exercise'){
   const name=String(data.get('exerciseName')||'').trim();if(!name)return;
   const master=await resolveExerciseInput(name);
