@@ -1,6 +1,7 @@
 import {list, get, put, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
+import {renderProgressView} from './progress-ui.js';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -382,15 +383,7 @@ function renderHistory() {
  </details>`;
 }
 function renderProgress() {
- const sessions=state.sessions.filter(s=>s.status==='finished');const start=new Date();start.setDate(start.getDate()-7);
- const recent=sessions.filter(s=>new Date(s.date+'T12:00:00')>=start);
- const ratings=sessions.map(s=>Number(s.intensity)).filter(n=>n>0);
- const count=sessions.reduce((acc,s)=>acc+s.exercises.length,0);
- const allExercises=new Map();
- for(const s of sessions)for(const x of s.exercises){const key=x.exerciseId||normalizeName(x.name);const item=allExercises.get(key)||{name:x.name,count:0};item.count++;allExercises.set(key,item);}
- const top=[...allExercises.values()].sort((a,b)=>b.count-a.count).slice(0,7);
- return `<div class="grid2"><div class="stat"><span>Finished sessions</span><strong>${sessions.length}</strong></div><div class="stat"><span>Recent 7 days</span><strong>${recent.length}</strong></div><div class="stat"><span>Exercise entries</span><strong>${count}</strong></div><div class="stat"><span>Average effort</span><strong>${ratings.length?(ratings.reduce((a,b)=>a+b,0)/ratings.length).toFixed(1):'—'}</strong></div></div>
- <div class="section-heading"><h2>Most logged exercises</h2></div><div class="card">${top.length?top.map(({name,count:n})=>`<div style="margin-bottom:15px"><div class="row between"><span>${e(name)}</span><span class="helper">${n} entries</span></div><div class="line" style="margin-top:7px"><span style="width:${Math.round(n/top[0].count*100)}%"></span></div></div>`).join(''):'<div class="empty">Log workouts to see your activity trends.</div>'}<p class="helper">Exercise frequency is not equivalent to training volume or hypertrophy. Missing measurements are not treated as zero.</p></div>`;
+ return renderProgressView({state,e,displayDate,photoUrl});
 }
 function renderLibrary() {
  if(state.libraryDetail) {
