@@ -56,7 +56,27 @@ export function renderProgressView({state,e,displayDate,photoUrl}) {
     '<div class="section-heading"><h3>Recorded sessions</h3><span class="pill">'+history.length+'</span></div>'+
     (history.length?'<div class="progress-session-list">'+detail+'</div><p class="helper">Showing up to 20 most recent completed sessions. Missing measurements are displayed as dashes.</p>':'<p class="helper">Finish a workout containing this exercise to begin tracking progress.</p>'):
     '<div class="empty">Record an exercise in a workout to begin seeing analytics.</div>')+
-  '</div></section>'+renderPhotoSection({state,e,displayDate,photoUrl});
+  '</div></section>'+renderWorkoutOverview({state,e})+renderPhotoSection({state,e,displayDate,photoUrl});
+}
+
+function renderWorkoutOverview({state,e}) {
+ const completed=state.sessions.filter(s=>s.status==='finished');
+ const current=new Date(), dateThreshold=(days)=>{
+  const cutoff=new Date(current.getFullYear(),current.getMonth(),current.getDate());
+  cutoff.setDate(cutoff.getDate()-(days-1));
+  return cutoff;
+ };
+ const since=days=>completed.filter(s=>s.date&&new Date(s.date+'T12:00:00')>=dateThreshold(days)).length;
+ const average=key=>{
+  const valid=completed.map(s=>numericValue(s[key])).filter(v=>v!==null&&v>=1&&v<=10);
+  return valid.length?String(Math.round(valid.reduce((a,b)=>a+b,0)/valid.length*10)/10):'—';
+ };
+ const cell=(label,value)=>'<div class="progress-stat"><span>'+e(label)+'</span><strong>'+e(value)+'</strong></div>';
+ return '<details class="card progress-overview"><summary>Workout overview <span class="helper">Optional</span></summary>'+
+ '<div class="progress-summary">'+cell('Completed workouts',completed.length)+cell('Last 7 days',since(7))+
+ cell('Last 30 days',since(30))+cell('Avg intensity',average('intensity'))+
+ cell('Avg fatigue',average('fatigue'))+'</div>'+
+ '<p class="helper">Intensity and fatigue are overall workout ratings. Missing ratings are excluded from averages.</p></details>';
 }
 
 function renderPhotoSection({state,e,displayDate,photoUrl}) {
