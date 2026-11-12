@@ -107,6 +107,8 @@ async function addExerciseToWorkout(master){
  if(!master||!state.session)return;
  const entry={id:newId(),exerciseId:master.id,name:master.name,technique:'Standard',notes:'',sets:[blankSet()]};
  state.session.exercises.push(entry);
+ // Keep only the newest exercise expanded to reduce scrolling during a workout.
+ state.expanded.clear();
  state.expanded.add(entry.id);
  await saveSession();
  await render();
