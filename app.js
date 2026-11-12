@@ -243,7 +243,7 @@ function exportCsv() {
   }
   for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes]);
  }
- download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\\r\\n'),'text/csv;charset=utf-8');
+ download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
 async function restoreBackup(file) {
  await flushSave();
