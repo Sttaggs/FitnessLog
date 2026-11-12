@@ -411,8 +411,17 @@ function renderLibrary() {
  <button class="btn small secondary" data-action="view-library" data-id="${x.id}">History</button></div></div>`).join(''):'<div class="card empty">Your exercises will appear here automatically as you log them.</div>'}`;
 }
 function renderSettings() {
- return `<div class="card"><h2>Data and privacy</h2><p>Your training records are stored locally in this browser using IndexedDB. They are not uploaded to GitHub or Cloudflare.</p><p class="notice">Deleting browser data or uninstalling the app can permanently remove records. Export a full backup regularly.</p><div class="stack" style="margin-top:15px">${button('Download full JSON backup','full-backup','wide')}${button('Restore from JSON backup','restore','secondary wide')}<input id="restore-file" type="file" accept="application/json,.json" hidden></div></div>
- <div class="card"><h2>About this version</h2><p class="muted">Initial release: flexible exercise logging, cardio, sauna, history, simple analytics, and exports. Advanced nested techniques, photo comparisons, body measurements, and timers are planned.</p></div>`;
+ return `<div class="card"><h2>Data and privacy</h2>
+ <p>Workout data and progress photos are stored only in this browser on this device. They are never uploaded to GitHub or Cloudflare.</p>
+ <p class="notice">Clearing browser data or uninstalling the app can permanently remove workouts and photos. Back up regularly.</p>
+ <div class="stack" style="margin-top:15px">
+ ${button('Download workout backup (no photos)','full-backup','wide')}
+ ${button('Download backup including photos','export-photos-backup','secondary wide')}
+ ${button('Restore JSON backup','restore','secondary wide')}
+ <input id="restore-file" type="file" accept="application/json,.json" hidden>
+ </div>
+ <p class="helper">Photo-inclusive backup is optional and may be large. Photo files are included only when you explicitly choose the photo-inclusive option. Restoring a workout-only backup preserves existing photos on this device.</p></div>
+ <div class="card"><h2>About</h2><p class="muted">Exercise analytics track recorded weight, repetitions, and RPE. Progress photos are private, dated, and comparable by view. Advanced training techniques and body measurements remain planned.</p></div>`;
 }
 function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
@@ -459,8 +468,28 @@ async function restoreBackup(file) {
  await flushSave();
  const parsed=JSON.parse(await file.text());
  if(parsed.app!=='FitnessLog'||!Array.isArray(parsed.sessions)||!Array.isArray(parsed.exercises))throw Error('Unsupported backup format');
- if(!confirm('Restore this backup? This will REPLACE all workouts and custom exercises on this device.'))return;
- await replaceAll('sessions',parsed.sessions);await replaceAll('exercises',parsed.exercises);state.session=null;state.tab='home';state.libraryDetail=null;await linkExistingExercises();await render();toast('Backup restored');
+ if(parsed.photos!==undefined&&!Array.isArray(parsed.photos))throw Error('Invalid photo list');
+ const hasPhotoPayload=Array.isArray(parsed.photos);
+ const question=hasPhotoPayload?
+  'Restore this backup? This will REPLACE all workouts, exercise library records, and saved progress photos on this device.':
+  'Restore this workout backup? This will REPLACE workouts and exercise library records. Your existing progress photos will be kept.';
+ if(!confirm(question))return;
+ // Validate and decode every optional photo before starting the atomic DB transaction.
+ const photos=hasPhotoPayload?await restorePhotos(parsed.photos):null;
+ const stores={sessions:parsed.sessions,exercises:parsed.exercises};
+ if(photos!==null)stores.photos=photos;
+ await replaceStores(stores);
+ for(const url of photoUrls.values())URL.revokeObjectURL(url);
+ photoUrls.clear();
+ state.photosLoaded=false;
+ state.photos=[];
+ state.session=null;
+ state.tab='home';
+ state.libraryDetail=null;
+ state.progressExercise='';
+ await linkExistingExercises();
+ await render();
+ toast('Backup restored');
 }
 async function action(name,el) {
  const s=state.session;
@@ -537,7 +566,18 @@ async function action(name,el) {
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
  if(name==='delete-activity'){s.activities=s.activities.filter(a=>a.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
- if(name==='export-json'||name==='full-backup'){const full=name==='full-backup'||(!state.start&&!state.end);download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:1,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises},null,2),'application/json');return toast('JSON file downloaded');}
+ if(name==='export-json'||name==='full-backup'){
+  const full=name==='full-backup'||(!state.start&&!state.end);
+  download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises},null,2),'application/json');
+  return toast('Workout backup downloaded (photos excluded)');
+ }
+ if(name==='export-photos-backup'){
+  const photos=await list('photos');
+  if(!confirm('Include '+photos.length+' private progress photos in the downloaded JSON backup? This file may be large and contain sensitive photographs.'))return;
+  const payload={app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:state.sessions,exercises:state.exercises,photos:await photosForBackup(photos)};
+  download('fitnesslog-with-photos-'+today()+'.json',JSON.stringify(payload),'application/json');
+  return toast('Photo-inclusive backup downloaded');
+ }
  if(name==='export-csv'){exportCsv();return toast('CSV downloaded');}
  if(name==='report'){if(state.start&&state.end&&state.start>state.end)return toast('Invalid date range');state.report=true;return render();}
  if(name==='report-close'){state.report=false;return render();}
