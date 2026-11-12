@@ -297,10 +297,10 @@ function playRestSound(){
 }
 function refreshRestTimers(){
  const timer=readRestTimer();
- if(timer.mode==='finished'&&!timer.notified){
+ if(timer.mode==='finished'&&!timer.notified&&!document.hidden){
   const recent=Number.isFinite(timer.endAt)&&Date.now()-timer.endAt<60000;
   markRestAlerted();
-  if(recent&&!document.hidden){playRestSound();toast('Rest complete · '+timer.exerciseName);}
+  if(recent){playRestSound();toast('Rest complete · '+timer.exerciseName);}
  }
  for(const panel of main.querySelectorAll('[data-exercise-timer]')){
   const key=panel.dataset.exerciseTimer,preference=restPreference(key);
