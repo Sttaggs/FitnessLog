@@ -7,7 +7,6 @@ const escapeHtml = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&
 const e = escapeHtml;
 const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
-const techniques = ['Standard'];
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const suggestions = ['Shoulder Press','Pec Fly','Lat Pulldown','Bent-Over Row','Dumbbell Lateral Raise','Biceps Curl','Triceps Pushdown','Squat','Leg Press','Romanian Deadlift','Plank'];
 const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null};
@@ -27,6 +26,8 @@ function formatSummary(s) {
 
 const normalizeName = name => String(name||'').trim().replace(/\s+/g,' ').toLocaleLowerCase();
 const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
+const hasSetData = set => Boolean(set && ['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined));
+const recordedSets = x => (x.sets||[]).filter(hasSetData);
 async function ensureExercise(name) {
  const clean=String(name||'').trim().replace(/\s+/g,' ');
  if (!clean) return null;
@@ -43,7 +44,7 @@ function previousPerformance(exerciseId,currentSessionId,currentDate) {
   if(s.id===currentSessionId || (currentDate && s.date>currentDate))continue;
   const x=(s.exercises||[]).find(ex=>ex.exerciseId===exerciseId);
   if(x) {
-   const populated=(x.sets||[]).filter(set=>set.weight!==''&&set.weight!=null||set.reps!==''&&set.reps!=null||set.rpe!==''&&set.rpe!=null);
+   const populated=recordedSets(x);
    return {date:s.date, sets:populated, total:x.sets?.length||0};
   }
  }
@@ -149,10 +150,10 @@ function renderProgress() {
  const ratings=sessions.map(s=>Number(s.intensity)).filter(n=>n>0);
  const count=sessions.reduce((acc,s)=>acc+s.exercises.length,0);
  const allExercises=new Map();
- for(const s of sessions)for(const x of s.exercises)allExercises.set(x.name,(allExercises.get(x.name)||0)+1);
- const top=[...allExercises.entries()].sort((a,b)=>b[1]-a[1]).slice(0,7);
+ for(const s of sessions)for(const x of s.exercises){const key=x.exerciseId||normalizeName(x.name);const item=allExercises.get(key)||{name:x.name,count:0};item.count++;allExercises.set(key,item);}
+ const top=[...allExercises.values()].sort((a,b)=>b.count-a.count).slice(0,7);
  return `<div class="grid2"><div class="stat"><span>Finished sessions</span><strong>${sessions.length}</strong></div><div class="stat"><span>Recent 7 days</span><strong>${recent.length}</strong></div><div class="stat"><span>Exercise entries</span><strong>${count}</strong></div><div class="stat"><span>Average effort</span><strong>${ratings.length?(ratings.reduce((a,b)=>a+b,0)/ratings.length).toFixed(1):'—'}</strong></div></div>
- <div class="section-heading"><h2>Most logged exercises</h2></div><div class="card">${top.length?top.map(([name,n])=>`<div style="margin-bottom:15px"><div class="row between"><span>${e(name)}</span><span class="helper">${n} sessions</span></div><div class="line" style="margin-top:7px"><span style="width:${Math.round(n/top[0][1]*100)}%"></span></div></div>`).join(''):'<div class="empty">Log workouts to see your activity trends.</div>'}<p class="helper">Exercise frequency is not equivalent to training volume or hypertrophy. Missing measurements are not treated as zero.</p></div>`;
+ <div class="section-heading"><h2>Most logged exercises</h2></div><div class="card">${top.length?top.map(({name,count:n})=>`<div style="margin-bottom:15px"><div class="row between"><span>${e(name)}</span><span class="helper">${n} entries</span></div><div class="line" style="margin-top:7px"><span style="width:${Math.round(n/top[0].count*100)}%"></span></div></div>`).join(''):'<div class="empty">Log workouts to see your activity trends.</div>'}<p class="helper">Exercise frequency is not equivalent to training volume or hypertrophy. Missing measurements are not treated as zero.</p></div>`;
 }
 function renderLibrary() {
  if(state.libraryDetail) {
@@ -166,7 +167,7 @@ function renderLibrary() {
   <div class="section-heading"><h2>Performance history</h2></div>
   ${records.length?records.map(({session,entry})=>`<div class="item">
    <div class="row between"><div class="grow"><strong>${displayDate(session.date)}</strong><p class="helper" style="margin:4px 0">${e(session.name)}</p>
-   <p class="helper" style="margin:4px 0">${entry.sets?.filter(set=>set.weight!==''||set.reps!==''||set.rpe!=='').map(set=>[set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',set.rpe?'RPE '+set.rpe:''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details'}</p></div>
+   <p class="helper" style="margin:4px 0">${recordedSets(entry).map(set=>[set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',set.rpe?'RPE '+set.rpe:''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details'}</p></div>
    <button class="btn small secondary" data-action="open" data-id="${session.id}">View</button></div></div>`).join(''):'<div class="card empty">No history for this exercise yet.</div>'}`;
  }
  return `<div class="card"><h2>Exercise library</h2><p class="helper">New exercises are added here automatically when you log them. All workouts using the same exercise are linked.</p>
@@ -187,26 +188,48 @@ function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderReport() {
- const ss=selected();return `<div class="no-print row between" style="margin-bottom:12px">${button('← History','report-close','secondary small')}${button('Print / Save PDF','print','small')}</div><div class="report print-area"><h2>FitnessLog training report</h2><p>${e(state.start||'All dates')} through ${e(state.end||'present')}</p><p class="muted">${ss.length} workouts · Export created ${displayDate(today())}. Blank fields were not recorded.</p>${ss.map(s=>`<section style="margin:22px 0"><h3>${e(s.name)} — ${displayDate(s.date)}</h3><p>Effort: ${e(s.intensity||'Not recorded')} · Fatigue: ${e(s.fatigue||'Not recorded')}</p><p>${e(s.notes||'')}</p><table><thead><tr><th>Exercise</th><th>Technique</th><th>Set details</th><th>Effort</th></tr></thead><tbody>${s.exercises.map(x=>`<tr><td>${e(x.name)}${x.notes?' — '+e(x.notes):''}</td><td>${e(x.technique||'Standard')}</td><td>${x.sets.map(set=>[set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':''].filter(Boolean).join(' × ')||'Set logged').join('; ')||'Not recorded'}</td><td>${e(x.intensity||'—')}</td></tr>`).join('')}</tbody></table>${s.activities.length?`<p>${s.activities.map(a=>`${e(a.type)}: ${e(a.mode)} ${a.duration?e(a.duration)+' min':''} ${a.distance?e(a.distance)+' km':''} ${a.notes?e(a.notes):''}`).join('; ')}</p>`:''}</section>`).join('')}</div>`;
+ const ss=selected();
+ const setDescription = set=>[
+  set.weight!==''&&set.weight!=null?set.weight+' lb':'',
+  set.reps!==''&&set.reps!=null?set.reps+' reps':'',
+  set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:''
+ ].filter(Boolean).join(' · ');
+ return `<div class="no-print row between" style="margin-bottom:12px">
+ ${button('← History','report-close','secondary small')}${button('Print / Save PDF','print','small')}</div>
+ <div class="report print-area">
+ <h2>FitnessLog training report</h2><p>${e(state.start||'All dates')} through ${e(state.end||'present')}</p>
+ <p class="muted">${ss.length} workouts · Export created ${displayDate(today())}. Blank fields were not recorded.</p>
+ ${ss.map(s=>`<section style="margin:22px 0"><h3>${e(s.name)} — ${displayDate(s.date)}</h3>
+ <p>Overall intensity: ${e(s.intensity||'Not recorded')} · Overall fatigue: ${e(s.fatigue||'Not recorded')}</p>
+ <p>${e(s.notes||'')}</p>
+ <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RPE)</th></tr></thead><tbody>
+ ${(s.exercises||[]).map(x=>`<tr><td>${e(x.name)}${x.notes?' — '+e(x.notes):''}</td>
+ <td>${e(x.technique||'Standard')}</td>
+ <td>${recordedSets(x).map(set=>e(setDescription(set))).join('; ')||'No set data recorded'}</td>
+ </tr>`).join('')}
+ </tbody></table>
+ ${s.activities?.length?`<p>${s.activities.map(a=>`${e(a.type)}: ${e(a.mode)} ${a.duration?e(a.duration)+' min':''} ${a.distance?e(a.distance)+' km':''} ${a.notes?e(a.notes):''}`).join('; ')}</p>`:''}
+ </section>`).join('')}</div>`;
 }
 function download(name, body, mime) {const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function csvValue(x) {return '"'+String(x??'').replace(/"/g,'""')+'"';}
 function exportCsv() {
- const rows=[['date','workout','exercise','technique','set','weight_lb','reps','exercise_intensity','exercise_fatigue','session_intensity','session_fatigue','notes']];
+ const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes']];
  for(const s of selected()) {
- for(const x of s.exercises) {
- if(x.sets.length) x.sets.forEach((set,i)=>rows.push([s.date,s.name,x.name,x.technique,i+1,set.weight,set.reps,x.intensity,x.fatigue,s.intensity,s.fatigue,x.notes]));
- else rows.push([s.date,s.name,x.name,x.technique,'','','',x.intensity,x.fatigue,s.intensity,s.fatigue,x.notes]);
+  for(const x of s.exercises||[]) {
+   const sets=recordedSets(x);
+   if(sets.length) sets.forEach((set,i)=>rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes]));
+   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes]);
+  }
+  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes]);
  }
- for(const a of s.activities) rows.push([s.date,s.name,a.type+': '+a.mode,'activity','','',a.duration,a.intensity,'',s.intensity,s.fatigue,a.notes]);
- }
- download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\r\n'),'text/csv;charset=utf-8');
+ download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\\r\\n'),'text/csv;charset=utf-8');
 }
 async function restoreBackup(file) {
  const parsed=JSON.parse(await file.text());
  if(parsed.app!=='FitnessLog'||!Array.isArray(parsed.sessions)||!Array.isArray(parsed.exercises))throw Error('Unsupported backup format');
  if(!confirm('Restore this backup? This will REPLACE all workouts and custom exercises on this device.'))return;
- await replaceAll('sessions',parsed.sessions);await replaceAll('exercises',parsed.exercises);state.session=null;state.tab='home';await render();toast('Backup restored');
+ await replaceAll('sessions',parsed.sessions);await replaceAll('exercises',parsed.exercises);state.session=null;state.tab='home';state.libraryDetail=null;await linkExistingExercises();await render();toast('Backup restored');
 }
 async function action(name,el) {
  const s=state.session;
@@ -222,7 +245,7 @@ async function action(name,el) {
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){s.status='finished';await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
- if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);x.sets.push(blankSet());state.expanded.add(x.id);await saveSession();await render();document.querySelector('#exercise-'+x.id+' .set-grid:last-of-type input[data-field="weight"]')?.focus();return;}
+ if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);x.sets.push(blankSet());state.expanded.add(x.id);await saveSession();await render();document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();return;}
  if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
