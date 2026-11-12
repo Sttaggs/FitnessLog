@@ -139,3 +139,8 @@
 .photo-gallery-meta button{min-height:32px}
 @media(min-width:620px){.progress-summary{grid-template-columns:repeat(4,minmax(0,1fr))}.photo-gallery-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.photo-compare-pair{gap:14px}}
 @media(max-width:370px){.progress-metric-toggle button{font-size:11px}.progress-stat strong{font-size:19px}.progress-session-count{font-size:10px}}
+
+.progress-overview{margin:12px 0 26px}
+.progress-overview>summary{display:flex;align-items:center;justify-content:space-between;min-height:43px;font-weight:700;cursor:pointer}
+.progress-overview[open]>summary{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:12px}
+.progress-overview .progress-summary{margin:8px 0}
