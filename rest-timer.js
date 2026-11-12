@@ -5,7 +5,6 @@ const PREF_KEY='fitnesslog-rest-preferences-v1';
 const DEFAULT_SECONDS=120;
 const MIN_SECONDS=15;
 const MAX_SECONDS=1800;
-const SHORTCUT_NAME='FitnessLog Rest Timer';
 
 function read(key,fallback) {
   try { const raw=localStorage.getItem(key); return raw?JSON.parse(raw):fallback; }
@@ -85,8 +84,4 @@ export function markRestAlerted() {
 export function restTimeLabel(seconds) {
   const value=Math.max(0,Math.ceil(seconds));
   return String(Math.floor(value/60)).padStart(2,'0')+':'+String(value%60).padStart(2,'0');
-}
-export function iphoneShortcutUrl(seconds) {
-  return 'shortcuts://run-shortcut?name='+encodeURIComponent(SHORTCUT_NAME)+
-   '&input=text&text='+encodeURIComponent(String(clampSeconds(seconds)));
 }
