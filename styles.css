@@ -70,3 +70,19 @@
 .previous-sets-row{font-size:13px;padding:8px 2px;border-top:1px solid #344439;font-variant-numeric:tabular-nums}
 .set-grid input::placeholder{color:#92a596;opacity:.75;font-style:italic}
 .historical-hint{margin:7px 0 2px;font-size:11px}
+
+
+/* Compact, explicitly controlled previous-performance disclosure. */
+.previous-reference{margin:12px 0 9px;border:1px solid #3b5140;border-radius:11px;background:#1b2920;overflow:hidden}
+.previous-toggle{appearance:none;display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;border:0;padding:10px 12px;background:transparent;color:var(--text);text-align:left;font-size:13px;font-weight:650}
+.previous-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+.previous-toggle-label{display:flex;align-items:center;min-width:0;gap:7px;flex-wrap:wrap}
+.previous-toggle-label small{font-weight:450;font-size:11px;color:var(--muted)}
+.previous-icon{font-size:16px;color:var(--accent);line-height:1}
+.previous-chevron{color:var(--accent);font-size:22px;line-height:1;transform:rotate(0deg);transition:transform .15s ease}
+.previous-toggle[aria-expanded="true"] .previous-chevron{transform:rotate(180deg)}
+.previous-panel[hidden]{display:none!important}
+.previous-panel{border-top:1px solid #3b5140}
+.previous-panel .previous-sets{padding:10px 12px}
+.previous-panel .previous-sets-row{font-variant-numeric:tabular-nums}
+.previous-panel .previous-notes{margin:0 12px 12px;overflow-wrap:anywhere}

@@ -9,7 +9,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:''};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -109,6 +109,7 @@ async function addExerciseToWorkout(master){
  state.session.exercises.push(entry);
  // Keep only the newest exercise expanded to reduce scrolling during a workout.
  state.expanded.clear();
+ state.previousOpenId=null;
  state.expanded.add(entry.id);
  await saveSession();
  await render();
@@ -230,11 +231,16 @@ function renderExercise(x,i) {
  ${textField('Exercise name',scope,'name',x.name)}
  <div class="field"><label>Technique</label><div class="technique-label">${e(type)}</div></div>
  </div>
- ${prev?`<details class="historical-detail"><summary>Previous performance · ${displayDate(prev.date)}</summary>
- ${prev.sets.length?`<div class="previous-sets"><div class="previous-sets-heading"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>
- ${prev.sets.map((set,j)=>`<div class="previous-sets-row"><span>${j+1}</span><span>${e(historicalField(set,'weight','—'))}</span><span>${e(historicalField(set,'reps','—'))}</span><span>${e(historicalField(set,'rpe','—'))}</span></div>`).join('')}</div>`:'<p class="helper">No sets recorded.</p>'}
- ${prev.notes?`<p class="helper">Notes: ${e(prev.notes)}</p>`:''}
- </details>`:''}
+ ${prev?`<section class="previous-reference">
+ <button type="button" class="previous-toggle" data-action="toggle-previous" data-id="${e(x.id)}" aria-expanded="${state.previousOpenId===x.id}" aria-controls="previous-panel-${e(x.id)}">
+  <span class="previous-toggle-label"><span class="previous-icon" aria-hidden="true">↶</span>Previous performance <small>${e(displayDate(prev.date))}</small></span>
+  <span class="previous-chevron" aria-hidden="true">⌄</span>
+ </button>
+ <div id="previous-panel-${e(x.id)}" class="previous-panel" ${state.previousOpenId===x.id?'':'hidden'}>
+  ${prev.sets.length?`<div class="previous-sets"><div class="previous-sets-heading"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>
+  ${prev.sets.map((set,j)=>`<div class="previous-sets-row"><span>${j+1}</span><span>${e(historicalField(set,'weight','—'))}</span><span>${e(historicalField(set,'reps','—'))}</span><span>${e(historicalField(set,'rpe','—'))}</span></div>`).join('')}</div>`:'<p class="helper">No sets recorded in the previous session.</p>'}
+  ${prev.notes?`<p class="helper previous-notes">Notes: ${e(prev.notes)}</p>`:''}
+ </div></section>`:''}
  <div class="set-grid set-heading"><span>SET</span><span>WEIGHT (LB)</span><span>REPS</span><span>RPE</span><span></span></div>
  ${(x.sets||[]).map((set,j)=>`<div class="set-grid">
  <span class="set-number">${j+1}</span>
@@ -487,6 +493,20 @@ async function action(name,el) {
  if(name==='select-exercise'){
   const master=state.exercises.find(x=>x.id===el.dataset.id);
   if(master)await addExerciseToWorkout(master);
+  return;
+ }
+ if(name==='toggle-previous'){
+  const panel=document.getElementById('previous-panel-'+el.dataset.id);
+  if(!panel)return;
+  const shouldOpen=el.getAttribute('aria-expanded')!=='true';
+  for(const trigger of main.querySelectorAll('[data-action="toggle-previous"]')){
+   trigger.setAttribute('aria-expanded','false');
+   const related=document.getElementById('previous-panel-'+trigger.dataset.id);
+   if(related)related.hidden=true;
+  }
+  el.setAttribute('aria-expanded',String(shouldOpen));
+  panel.hidden=!shouldOpen;
+  state.previousOpenId=shouldOpen?el.dataset.id:null;
   return;
  }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
