@@ -70,6 +70,14 @@ function renderExerciseSuggestions(input,highlight=-1){
  const query=input.value.trim(),matches=exerciseMatches(query).slice(0,8);
  if(!query){closeExerciseSuggestions();return;}
  list.hidden=false;
+ const viewport=window.visualViewport;
+ const bottom=(viewport?.offsetTop??0)+(viewport?.height??window.innerHeight);
+ const rect=input.getBoundingClientRect();
+ const availableBelow=bottom-rect.bottom;
+ const availableAbove=rect.top-(viewport?.offsetTop??0);
+ const placeAbove=availableBelow<180&&availableAbove>availableBelow;
+ list.classList.toggle('above',placeAbove);
+ list.style.maxHeight=Math.min(300,Math.max(110,(placeAbove?availableAbove:availableBelow)-16))+'px';
  list.innerHTML=matches.length?matches.map((match,i)=>
   '<button type="button" role="option" id="exercise-option-'+i+'" class="exercise-search-option'+(i===highlight?' highlighted':'')+'" aria-selected="'+(i===highlight)+'" data-action="select-exercise" data-id="'+e(match.exercise.id)+'"><span>'+e(match.exercise.name)+'</span><small>'+(match.similar?'Similar spelling — check name':'Saved exercise')+'</small></button>'
  ).join(''):'<div class="exercise-search-empty">No saved match. Adding this name will create an exercise.</div>';
