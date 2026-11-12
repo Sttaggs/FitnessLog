@@ -25,7 +25,74 @@ function formatSummary(s) {
  return [n&&`${n} exercises`,c&&`${c} cardio`,z&&`${z} sauna`].filter(Boolean).join(' · ')||'No entries yet';
 }
 
-const normalizeName = name => String(name||'').trim().replace(/\s+/g,' ').toLocaleLowerCase();
+const normalizeName = name => String(name||'').normalize('NFKC').toLocaleLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+
+// Used only for suggestions: similar names are never silently merged.
+function editDistance(a,b,limit=3){
+ if(Math.abs(a.length-b.length)>limit)return limit+1;
+ let previous=Array.from({length:b.length+1},(_,i)=>i);
+ for(let i=1;i<=a.length;i++){
+  const current=[i];let rowMin=i;
+  for(let j=1;j<=b.length;j++){
+   current[j]=Math.min(current[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));
+   rowMin=Math.min(rowMin,current[j]);
+  }
+  if(rowMin>limit)return limit+1;
+  previous=current;
+ }
+ return previous[b.length];
+}
+function exerciseMatches(value){
+ const query=normalizeName(value);
+ if(!query)return [];
+ const terms=query.split(' ');
+ const results=[];
+ for(const exercise of state.exercises){
+  const name=normalizeName(exercise.name),words=name.split(' ');
+  let score=Infinity,similar=false;
+  if(name===query)score=0;
+  else if(name.startsWith(query))score=1;
+  else if(words.some(word=>word.startsWith(query)))score=2;
+  else if(name.includes(query))score=3;
+  else if(terms.length>1&&terms.every(t=>words.some(w=>w.startsWith(t))))score=4;
+  else if(query.length>=4){
+   const limit=query.length>=20?3:query.length>=8?2:1;
+   if(editDistance(query,name,limit)<=limit){score=5;similar=true;}
+   else if(terms.length>1&&terms.every(t=>words.some(w=>w===t||w.startsWith(t)||(t.length>=4&&editDistance(t,w,t.length>=7?2:1)<=(t.length>=7?2:1))))){score=6;similar=true;}
+  }
+  if(score!==Infinity)results.push({exercise,score,similar});
+ }
+ return results.sort((a,b)=>a.score-b.score||a.exercise.name.localeCompare(b.exercise.name));
+}
+function renderExerciseSuggestions(input,highlight=-1){
+ const list=document.getElementById('exercise-search-options');
+ if(!list)return;
+ const query=input.value.trim(),matches=exerciseMatches(query).slice(0,8);
+ if(!query){closeExerciseSuggestions();return;}
+ list.hidden=false;
+ list.innerHTML=matches.length?matches.map((match,i)=>
+  '<button type="button" role="option" id="exercise-option-'+i+'" class="exercise-search-option'+(i===highlight?' highlighted':'')+'" aria-selected="'+(i===highlight)+'" data-action="select-exercise" data-id="'+e(match.exercise.id)+'"><span>'+e(match.exercise.name)+'</span><small>'+(match.similar?'Similar spelling — check name':'Saved exercise')+'</small></button>'
+ ).join(''):'<div class="exercise-search-empty">No saved match. Adding this name will create an exercise.</div>';
+ list.dataset.highlight=String(highlight);
+ input.setAttribute('aria-expanded',String(matches.length>0));
+ if(highlight>=0&&highlight<matches.length)input.setAttribute('aria-activedescendant','exercise-option-'+highlight);
+ else input.removeAttribute('aria-activedescendant');
+}
+function closeExerciseSuggestions(){
+ const input=document.getElementById('exercise-entry-name');
+ const list=document.getElementById('exercise-search-options');
+ if(list){list.hidden=true;list.innerHTML='';}
+ if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}
+}
+async function addExerciseToWorkout(master){
+ if(!master||!state.session)return;
+ const entry={id:newId(),exerciseId:master.id,name:master.name,technique:'Standard',notes:'',sets:[blankSet()]};
+ state.session.exercises.push(entry);
+ state.expanded.add(entry.id);
+ await saveSession();
+ await render();
+ document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});
+}
 const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
 const hasSetData = set => Boolean(set && ['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined));
 const recordedSets = x => (x.sets||[]).filter(hasSetData);
