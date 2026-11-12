@@ -70,7 +70,27 @@ async function linkExistingExercises() {
 }
 
 async function refreshData() {state.sessions=(await list('sessions')).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''));state.exercises=await list('exercises');}
-async function saveSession() {if(!state.session)return;state.session.updatedAt=new Date().toISOString();await put('sessions',state.session);await refreshData();}
+let saveQueue=Promise.resolve();
+let saveTimer=null;
+async function saveSession() {
+ if(!state.session)return;
+ const updatedAt=new Date().toISOString();
+ state.session.updatedAt=updatedAt;
+ const snapshot=JSON.parse(JSON.stringify(state.session));
+ saveQueue=saveQueue.catch(()=>{}).then(async()=>{await put('sessions',snapshot);await refreshData();});
+ return saveQueue;
+}
+function scheduleSave() {
+ if(!state.session)return;
+ clearTimeout(saveTimer);
+ saveTimer=setTimeout(()=>{saveTimer=null;saveSession().catch(err=>{console.error(err);toast('Could not save changes');});},250);
+}
+async function flushSave() {
+ if(!saveTimer)return;
+ clearTimeout(saveTimer);
+ saveTimer=null;
+ await saveSession();
+}
 async function render() {
  await refreshData();
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
@@ -226,6 +246,7 @@ function exportCsv() {
  download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\\r\\n'),'text/csv;charset=utf-8');
 }
 async function restoreBackup(file) {
+ await flushSave();
  const parsed=JSON.parse(await file.text());
  if(parsed.app!=='FitnessLog'||!Array.isArray(parsed.sessions)||!Array.isArray(parsed.exercises))throw Error('Unsupported backup format');
  if(!confirm('Restore this backup? This will REPLACE all workouts and custom exercises on this device.'))return;
@@ -234,17 +255,18 @@ async function restoreBackup(file) {
 async function action(name,el) {
  const s=state.session;
  if(name==='start') {
+  await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
   state.expanded=new Set(active?.exercises?.map(x=>x.id)||[]);
   state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
   await saveSession();return render();
  }
- if(name==='open') {state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
- if(name==='close-workout'){state.session=null;state.expanded.clear();state.tab='home';return render();}
+ if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
+ if(name==='close-workout'){await flushSave();state.session=null;state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
- if(name==='finish'){s.status='finished';await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);x.sets.push(blankSet());state.expanded.add(x.id);await saveSession();await render();document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();return;}
  if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
@@ -267,19 +289,70 @@ function findScope(scope){
  if(kind==='set')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId);
 }
 document.addEventListener('click',async ev=>{
- const nav=ev.target.closest('[data-tab]');if(nav){state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.libraryDetail=null;await render();return;}
+ const nav=ev.target.closest('[data-tab]');if(nav){await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.libraryDetail=null;await render();return;}
  const el=ev.target.closest('[data-action]');if(!el)return;
  try{await action(el.dataset.action,el);}catch(error){console.error(error);toast('Unable to complete action');}
 });
+function validateEntry(input,value,showError=false) {
+ const {field}=input.dataset;
+ if(input.type==='number' && value!=='' && (!Number.isFinite(Number(value))||Number(value)<0)) {
+  if(showError)toast('Enter a nonnegative number');
+  return false;
+ }
+ if(['intensity','fatigue'].includes(field)&&value!==''&&(Number(value)<1||Number(value)>10)) {
+  if(showError)toast('Rating must be between 1 and 10');
+  return false;
+ }
+ if(field==='rpe'&&value!==''&&(Number(value)<1||Number(value)>10)) {
+  if(showError)toast('RPE must be between 1 and 10');
+  return false;
+ }
+ return true;
+}
+document.addEventListener('input',ev=>{
+ const {scope,field}=ev.target.dataset||{};
+ if(!scope||!field||scope==='filter') {
+  if(scope==='filter')state[field]=ev.target.value;
+  return;
+ }
+ // Exercise names are resolved on change, not during partial typing.
+ if(field==='name'&&scope.startsWith('exercise:'))return;
+ const target=findScope(scope);if(!target)return;
+ if(!validateEntry(ev.target,ev.target.value))return;
+ target[field]=ev.target.value;
+ scheduleSave();
+});
+document.addEventListener('toggle',ev=>{
+ const card=ev.target;
+ if(!card.matches?.('[data-exercise-card]')||!document.contains(card))return;
+ if(card.open)state.expanded.add(card.dataset.exerciseCard);
+ else state.expanded.delete(card.dataset.exerciseCard);
+},true);
 document.addEventListener('change',async ev=>{
- if(ev.target.id==='restore-file'){const f=ev.target.files?.[0];if(f)try{await restoreBackup(f);}catch(err){console.error(err);toast('Invalid or unreadable backup');}return;}
- const {scope,field}=ev.target.dataset;if(!scope||!field)return;
+ if(ev.target.id==='restore-file'){
+  const f=ev.target.files?.[0];
+  if(f)try{await restoreBackup(f);}catch(err){console.error(err);toast('Invalid or unreadable backup');}
+  return;
+ }
+ const {scope,field}=ev.target.dataset||{};
+ if(!scope||!field)return;
  const target=findScope(scope);if(!target)return;
  const value=ev.target.value;
- if(ev.target.type==='number'&&value!==''&&!Number.isFinite(Number(value)))return;
- if(field==='intensity'||field==='fatigue'){if(value!==''&&(Number(value)<0||Number(value)>10)){toast('Rating must be 0–10');return;}}
+ if(!validateEntry(ev.target,value,true)) {
+  ev.target.value=target[field]??'';
+  return;
+ }
+ if(scope==='filter'){state[field]=value;return;}
+ if(field==='name'&&scope.startsWith('exercise:')) {
+  const master=await ensureExercise(value);
+  if(!master){ev.target.value=target.name;toast('Enter an exercise name');return;}
+  target.name=master.name;
+  target.exerciseId=master.id;
+  await saveSession();
+  await render();
+  return;
+ }
  target[field]=value;
- if(scope==='filter')return;
  try{await saveSession();}catch(err){console.error(err);toast('Could not save change');}
 });
 document.addEventListener('submit',async ev=>{
@@ -301,5 +374,5 @@ document.addEventListener('submit',async ev=>{
   await render();toast(wasSaved?'Exercise already exists':'Exercise saved');
  }
 });
-$('#settings-button').addEventListener('click',()=>{state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;render();});
+$('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
 (async()=>{try{await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
