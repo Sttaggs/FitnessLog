@@ -8,7 +8,6 @@ const e = escapeHtml;
 const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
-const suggestions = ['Shoulder Press','Pec Fly','Lat Pulldown','Bent-Over Row','Dumbbell Lateral Raise','Biceps Curl','Triceps Pushdown','Squat','Leg Press','Romanian Deadlift','Plank'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
 const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:''};
 
@@ -25,7 +24,94 @@ function formatSummary(s) {
  return [n&&`${n} exercises`,c&&`${c} cardio`,z&&`${z} sauna`].filter(Boolean).join(' · ')||'No entries yet';
 }
 
-const normalizeName = name => String(name||'').trim().replace(/\s+/g,' ').toLocaleLowerCase();
+const normalizeName = name => String(name||'').normalize('NFKC').toLocaleLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+
+// Used only for suggestions: similar names are never silently merged.
+function editDistance(a,b,limit=3){
+ if(Math.abs(a.length-b.length)>limit)return limit+1;
+ let previous=Array.from({length:b.length+1},(_,i)=>i);
+ for(let i=1;i<=a.length;i++){
+  const current=[i];let rowMin=i;
+  for(let j=1;j<=b.length;j++){
+   current[j]=Math.min(current[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));
+   rowMin=Math.min(rowMin,current[j]);
+  }
+  if(rowMin>limit)return limit+1;
+  previous=current;
+ }
+ return previous[b.length];
+}
+function exerciseMatches(value){
+ const query=normalizeName(value);
+ if(!query)return [];
+ const terms=query.split(' ');
+ const results=[];
+ for(const exercise of state.exercises){
+  const name=normalizeName(exercise.name),words=name.split(' ');
+  let score=Infinity,similar=false;
+  if(name===query)score=0;
+  else if(name.startsWith(query))score=1;
+  else if(words.some(word=>word.startsWith(query)))score=2;
+  else if(name.includes(query))score=3;
+  else if(terms.length>1&&terms.every(t=>words.some(w=>w.startsWith(t))))score=4;
+  else if(query.length>=4){
+   const limit=query.length>=20?3:query.length>=8?2:1;
+   if(editDistance(query,name,limit)<=limit){score=5;similar=true;}
+   else if(terms.length>1&&terms.every(t=>words.some(w=>w===t||w.startsWith(t)||(t.length>=4&&editDistance(t,w,t.length>=7?2:1)<=(t.length>=7?2:1))))){score=6;similar=true;}
+  }
+  if(score!==Infinity)results.push({exercise,score,similar});
+ }
+ return results.sort((a,b)=>a.score-b.score||a.exercise.name.localeCompare(b.exercise.name));
+}
+function renderExerciseSuggestions(input,highlight=-1){
+ const list=document.getElementById('exercise-search-options');
+ if(!list)return;
+ const query=input.value.trim(),matches=exerciseMatches(query).slice(0,8);
+ if(!query){closeExerciseSuggestions();return;}
+ list.hidden=false;
+ const viewport=window.visualViewport;
+ const bottom=(viewport?.offsetTop??0)+(viewport?.height??window.innerHeight);
+ const rect=input.getBoundingClientRect();
+ const availableBelow=bottom-rect.bottom;
+ const availableAbove=rect.top-(viewport?.offsetTop??0);
+ const placeAbove=availableBelow<180&&availableAbove>availableBelow;
+ list.classList.toggle('above',placeAbove);
+ list.style.maxHeight=Math.min(300,Math.max(110,(placeAbove?availableAbove:availableBelow)-16))+'px';
+ list.innerHTML=matches.length?matches.map((match,i)=>
+  '<button type="button" role="option" id="exercise-option-'+i+'" class="exercise-search-option'+(i===highlight?' highlighted':'')+'" aria-selected="'+(i===highlight)+'" data-action="select-exercise" data-id="'+e(match.exercise.id)+'"><span>'+e(match.exercise.name)+'</span><small>'+(match.similar?'Similar spelling — check name':'Saved exercise')+'</small></button>'
+ ).join(''):'<div class="exercise-search-empty">No saved match. Adding this name will create an exercise.</div>';
+ list.dataset.highlight=String(highlight);
+ input.setAttribute('aria-expanded',String(matches.length>0));
+ if(highlight>=0&&highlight<matches.length)input.setAttribute('aria-activedescendant','exercise-option-'+highlight);
+ else input.removeAttribute('aria-activedescendant');
+}
+function closeExerciseSuggestions(){
+ const input=document.getElementById('exercise-entry-name');
+ const list=document.getElementById('exercise-search-options');
+ if(list){list.hidden=true;list.innerHTML='';}
+ if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}
+}
+async function resolveExerciseInput(name){
+ const matches=exerciseMatches(name);
+ const exact=matches.find(match=>normalizeName(match.exercise.name)===normalizeName(name));
+ if(exact)return exact.exercise;
+ const similar=matches.some(match=>match.similar);
+ const shortMatches=normalizeName(name).length<=3&&matches.length>0;
+ if(similar||shortMatches){
+  const choices=matches.slice(0,3).map(match=>match.exercise.name).join(', ');
+  if(!confirm('Similar saved exercises: '+choices+'.\n\nCreate "'+name+'" as a separate exercise anyway?\n\nChoose Cancel to select an existing exercise instead.'))return null;
+ }
+ return ensureExercise(name);
+}
+async function addExerciseToWorkout(master){
+ if(!master||!state.session)return;
+ const entry={id:newId(),exerciseId:master.id,name:master.name,technique:'Standard',notes:'',sets:[blankSet()]};
+ state.session.exercises.push(entry);
+ state.expanded.add(entry.id);
+ await saveSession();
+ await render();
+ document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});
+}
 const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
 const hasSetData = set => Boolean(set && ['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined));
 const recordedSets = x => (x.sets||[]).filter(hasSetData);
@@ -114,7 +200,7 @@ function renderWorkout() {
  <div style="margin-top:10px">${memoField('Session notes','session','notes',s.notes)}</div></details></div>
  <div class="section-heading"><h2>Resistance exercises</h2><span class="pill">${s.exercises.length}</span></div>
  ${s.exercises.map((x,i)=>renderExercise(x,i)).join('')}
- <div class="card"><form data-form="add-exercise" class="stack"><div class="field"><label>Add any exercise</label><input name="exerciseName" list="exercise-suggestions" placeholder="e.g. Machine Lateral Raise" required autocomplete="off" enterkeyhint="done"></div><datalist id="exercise-suggestions">${[...new Set([...state.exercises.map(x=>x.name),...suggestions])].map(n=>`<option value="${e(n)}"></option>`).join('')}</datalist><button class="btn secondary wide" type="submit">＋ Add exercise</button></form></div>
+ <div class="card"><form data-form="add-exercise" class="stack"><div class="field exercise-search-field"><label for="exercise-entry-name">Add an exercise</label><input id="exercise-entry-name" name="exerciseName" placeholder="Search or type a new exercise" required autocomplete="off" spellcheck="false" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="exercise-search-options" aria-expanded="false"><div id="exercise-search-options" class="exercise-search-options" role="listbox" aria-label="Existing matching exercises" hidden></div></div><button class="btn secondary wide" type="submit">＋ Add exercise</button><p class="helper" style="margin:0">Select a saved exercise to keep its history linked. New names are saved automatically.</p></form></div>
  <div class="section-heading"><h2>Cardio and sauna</h2></div>${s.activities.map((x,i)=>renderActivity(x,i)).join('')}
  <div class="card"><div class="grid2">${button('＋ Cardio','add-cardio','secondary')}${button('＋ Sauna','add-sauna','secondary')}</div></div>
  <div class="card"><div class="stack">
@@ -390,10 +476,15 @@ async function action(name,el) {
   toast('Workout deleted');
   return;
  }
+ if(name==='select-exercise'){
+  const master=state.exercises.find(x=>x.id===el.dataset.id);
+  if(master)await addExerciseToWorkout(master);
+  return;
+ }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
- if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);x.sets.push(blankSet());state.expanded.add(x.id);await saveSession();await render();document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();return;}
+ if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);const previous=x.sets.at(-1);x.sets.push({id:newId(),weight:previous?.weight??'',reps:previous?.reps??'',rpe:previous?.rpe??''});state.expanded.add(x.id);await saveSession();await render();document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();return;}
  if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
@@ -435,6 +526,32 @@ function validateEntry(input,value,showError=false) {
  }
  return true;
 }
+
+document.addEventListener('input',ev=>{
+ if(ev.target.id==='exercise-entry-name')renderExerciseSuggestions(ev.target);
+});
+document.addEventListener('focusin',ev=>{
+ if(ev.target.id==='exercise-entry-name'&&ev.target.value.trim())renderExerciseSuggestions(ev.target);
+});
+document.addEventListener('keydown',ev=>{
+ if(ev.target.id!=='exercise-entry-name')return;
+ const list=document.getElementById('exercise-search-options');
+ const options=Array.from(list?.querySelectorAll('[data-action="select-exercise"]')||[]);
+ const current=Number(list?.dataset.highlight??-1);
+ if((ev.key==='ArrowDown'||ev.key==='ArrowUp')&&options.length){
+  ev.preventDefault();
+  const next=ev.key==='ArrowDown'?(current+1)%options.length:(current<=0?options.length-1:current-1);
+  renderExerciseSuggestions(ev.target,next);
+ }else if(ev.key==='Escape'){
+  closeExerciseSuggestions();
+ }else if(ev.key==='Enter'&&current>=0&&current<options.length&&!list.hidden){
+  ev.preventDefault();
+  options[current].click();
+ }
+});
+document.addEventListener('click',ev=>{
+ if(!ev.target.closest('.exercise-search-field'))closeExerciseSuggestions();
+});
 document.addEventListener('input',ev=>{
  const {scope,field}=ev.target.dataset||{};
  if(!scope||!field||scope==='filter') {
@@ -470,8 +587,8 @@ document.addEventListener('change',async ev=>{
  }
  if(scope==='filter'){state[field]=value;return;}
  if(field==='name'&&scope.startsWith('exercise:')) {
-  const master=await ensureExercise(value);
-  if(!master){ev.target.value=target.name;toast('Enter an exercise name');return;}
+  const master=await resolveExerciseInput(value);
+  if(!master){ev.target.value=target.name;return;}
   target.name=master.name;
   target.exerciseId=master.id;
   await saveSession();
@@ -486,16 +603,16 @@ document.addEventListener('submit',async ev=>{
  const data=new FormData(form);
  if(form.dataset.form==='add-exercise'){
   const name=String(data.get('exerciseName')||'').trim();if(!name)return;
-  const master=await ensureExercise(name);
-  const entry={id:newId(),exerciseId:master.id,name:master.name,technique:'Standard',notes:'',sets:[blankSet()]};
-  state.session.exercises.push(entry);state.expanded.add(entry.id);
-  await saveSession();await render();
-  document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});return;
+  const master=await resolveExerciseInput(name);
+  if(!master){document.getElementById('exercise-entry-name')?.focus();return;}
+  await addExerciseToWorkout(master);
+  return;
  }
  if(form.dataset.form==='library'){
   const name=String(data.get('name')||'').trim();if(!name)return;
   const wasSaved=state.exercises.some(x=>normalizeName(x.name)===normalizeName(name));
-  const master=await ensureExercise(name);
+  const master=await resolveExerciseInput(name);
+  if(!master){form.querySelector('input[name="name"]')?.focus();return;}
   if(!wasSaved){master.muscle=String(data.get('muscle')||'');master.equipment=String(data.get('equipment')||'');await put('exercises',master);}
   await render();toast(wasSaved?'Exercise already exists':'Exercise saved');
  }
