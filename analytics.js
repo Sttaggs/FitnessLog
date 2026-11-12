@@ -65,7 +65,10 @@ export function trendSvg(points, metric='weight') {
   const values=points.map(p=>p.value);
   let min=Math.min(...values),max=Math.max(...values);
   if (metric==='rpe') {min=1;max=10;}
-  else {
+  else if(max===min) {
+    min=0;
+    max=Math.max(1,max*1.1);
+  } else {
     const spread=Math.max(max-min,1);
     min=Math.max(0,min-spread*.2);
     max=max+spread*.2;
@@ -77,18 +80,19 @@ export function trendSvg(points, metric='weight') {
   const path=coords.map((p,i)=>(i?'L':'M')+p.x.toFixed(2)+' '+p.y.toFixed(2)).join(' ');
   const unit=metric==='weight'?'lb':metric==='reps'?'reps':'RPE';
   const fmt=value=>Number.isInteger(value)?String(value):value.toFixed(1);
+  const safe=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const grid=Array.from({length:5},(_,i)=>{
     const value=min+(max-min)*i/4,cy=y(value);
     return '<line x1="'+left+'" x2="'+(width-right)+'" y1="'+cy+'" y2="'+cy+'" stroke="#3a4551" stroke-width="1" />'+
       '<text x="'+(left-9)+'" y="'+(cy+4)+'" fill="#a6b1bc" text-anchor="end" font-size="12">'+fmt(value)+'</text>';
   }).join('');
   const circles=coords.map(({x:cx,y:cy,p}) =>
-    '<circle cx="'+cx+'" cy="'+cy+'" r="5" fill="#a9f071" stroke="#0e1116" stroke-width="2"><title>'+p.date+': '+fmt(p.value)+' '+unit+'</title></circle>'
+    '<circle cx="'+cx+'" cy="'+cy+'" r="5" fill="#a9f071" stroke="#0e1116" stroke-width="2"><title>'+safe(p.date)+': '+fmt(p.value)+' '+unit+'</title></circle>'
   ).join('');
   const first=points[0].date,last=points[points.length-1].date;
   return '<svg viewBox="0 0 '+width+' '+height+'" class="progress-trend-svg" role="img" aria-label="'+unit+' trend across '+points.length+' recorded sessions">'+
     grid+'<path d="'+path+'" fill="none" stroke="#a9f071" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+
-    circles+'<text x="'+left+'" y="'+(height-10)+'" fill="#a6b1bc" font-size="12">'+first+'</text>'+
-    (points.length>1?'<text x="'+(width-right)+'" y="'+(height-10)+'" text-anchor="end" fill="#a6b1bc" font-size="12">'+last+'</text>':'')+
+    circles+'<text x="'+left+'" y="'+(height-10)+'" fill="#a6b1bc" font-size="12">'+safe(first)+'</text>'+
+    (points.length>1?'<text x="'+(width-right)+'" y="'+(height-10)+'" text-anchor="end" fill="#a6b1bc" font-size="12">'+safe(last)+'</text>':'')+
     '</svg>';
 }
