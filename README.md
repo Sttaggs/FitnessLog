@@ -3,7 +3,7 @@
 A private-by-default, local-first fitness journal for iPhone and desktop browsers.
 
 ## Purpose
-FitnessLog supports flexible workout logging without forcing a prescribed workout mode. Exercises can be recorded by name alone, with optional sets, repetitions, weights, effort, fatigue, and notes. Cardio and sauna entries can be attached to a session. Workouts can be edited later.
+FitnessLog supports flexible workout logging without forcing a prescribed workout mode. Exercises can be recorded by name alone, with optional sets, repetitions, weights, per-set RPE, and notes. Intensity and fatigue are recorded at the workout level. Cardio and sauna entries can be attached to a session. Workouts can be edited later.
 
 ## Stack
 - HTML, CSS, and vanilla JavaScript (no build step)
@@ -54,11 +54,17 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Export date-filtered CSV and JSON; printable PDF report via browser print-to-PDF
 - PWA install support and offline shell cache
 
+
+## Progress page
+Exercise Analytics lets you choose a saved exercise and chart the highest recorded weight, highest repetitions, or average set RPE in each completed workout. You can select a rolling date range, filter repetition trends at a specific recorded weight, and expand dated workout entries to inspect individual sets. Missing values are excluded from calculations; there is no volume-load metric or automatic progressive-overload prescription.
+
+Progress Photos are dated Front/Side/Back photos saved as compressed JPEGs in a separate local IndexedDB store. The Progress page provides a collapsed add-photo form, a saved-photo gallery, and same-view side-by-side or adjustable overlay comparisons. All photos remain local to the current device unless the user deliberately exports them. Standard workout CSV, JSON, and PDF exports do **not** include photos. Settings has a separate explicit **Download backup including photos** action; photo backups can be large and must be protected like personal files. Restoring an older workout-only backup does not erase photos. Uninstalling the app or clearing website storage can permanently erase locally stored photos.
+
 ## Roadmap
 - Structured superset groups and advanced nested techniques
 - Per-set exercise UI refinements and inline timers
-- Dedicated body-measurement and private progress-photo comparison module
-- Charts, training rotation, and expanded analytics
+- Dedicated body-measurement module and more advanced progress-photo alignment tools
+- Expanded training analytics and tracking rotation
 - Media-inclusive backup with integrity verification
 - Automated tests and accessibility audit
 
