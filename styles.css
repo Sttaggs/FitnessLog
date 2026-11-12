@@ -145,25 +145,15 @@
 .progress-overview[open]>summary{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:12px}
 .progress-overview .progress-summary{margin:8px 0}
 
-
-/* Local, optional rest countdown. Keeps timers distinct from logged set values. */
-.rest-timer{margin:12px 0 10px;background:#17241e;border:1px solid #375043;border-radius:12px;padding:11px}
-.rest-timer [hidden]{display:none!important}
-.rest-timer-top,.rest-timer-main{display:flex;align-items:center;justify-content:space-between;gap:9px}
-.rest-title{font-size:12px;color:var(--accent);font-weight:750}
-.rest-timer-status{font-size:11px;color:var(--muted);text-align:right;max-width:60%;overflow-wrap:anywhere}
-.rest-timer-main{margin:10px 0;flex-wrap:wrap}
-.rest-timer-clock{font-size:29px;letter-spacing:-.035em;font-weight:750;line-height:1.1;font-variant-numeric:tabular-nums}
-.rest-timer-buttons{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;max-width:75%}
-.rest-timer-buttons .btn{padding:7px 11px;min-height:35px}
-.rest-timer-presets{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
-.rest-preset{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:11px;min-height:34px;padding:6px 9px}
-.rest-preset.selected{color:var(--accent);background:#263b2a;border-color:#6c9860}
-.rest-timer-presets .btn{min-height:34px;padding:6px 9px}
-.rest-iphone{padding-top:9px;margin-top:11px;border-top:1px solid #375043}
-.rest-iphone>.btn{font-size:12px}
-.rest-iphone-setup{margin-top:8px;color:var(--muted);font-size:11px;line-height:1.5}
-.rest-iphone-setup>summary{cursor:pointer;color:var(--muted);padding:5px 0;min-height:26px;font-weight:650}
-.rest-iphone-setup p{line-height:1.55;margin:8px 0}
-.rest-iphone-setup a{display:inline-block;color:var(--accent);margin:2px 0 8px}
-@media(max-width:375px){.rest-timer{padding:9px}.rest-timer-clock{font-size:26px}.rest-timer-buttons .btn{padding:6px 8px;font-size:11px}.rest-preset{padding:6px 7px}}
+/* Compact inline rest control. Deliberately one row without setup or presets. */
+.rest-mini{display:flex;align-items:center;gap:6px;width:100%;min-height:39px;margin:9px 0;border:1px solid #375043;border-radius:9px;background:#17241e;padding:4px 6px;overflow:hidden}
+.rest-mini [hidden]{display:none!important}
+.rest-mini-label{font-size:11px;font-weight:700;color:var(--accent);flex:0 0 auto}
+.rest-mini-clock{font-size:16px;line-height:1.2;letter-spacing:-.025em;font-weight:750;min-width:45px;font-variant-numeric:tabular-nums;text-align:center;flex:0 0 auto}
+.rest-mini[data-mode="running"] .rest-mini-clock{color:var(--accent)}
+.rest-mini[data-mode="finished"] .rest-mini-clock{color:var(--accent)}
+.rest-mini-controls{display:flex;gap:4px;margin-left:auto;align-items:center;justify-content:flex-end;min-width:0}
+.rest-mini-button{display:inline-flex;align-items:center;justify-content:center;min-width:33px;height:31px;border-radius:7px;padding:0 4px;border:1px solid #43534a;background:#27352d;color:var(--text);font-size:11px;font-weight:700;white-space:nowrap;flex:0 0 auto;cursor:pointer}
+.rest-mini-button.rest-mini-primary{background:var(--accent);color:#16250e;border-color:var(--accent);font-size:15px}
+.rest-mini-button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media(max-width:370px){.rest-mini{gap:4px;padding:4px}.rest-mini-controls{gap:3px}.rest-mini-button{min-width:30px;height:30px;padding:0 3px}.rest-mini-label{font-size:10px}.rest-mini-clock{font-size:15px;min-width:42px}}
