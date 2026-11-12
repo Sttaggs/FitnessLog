@@ -30,9 +30,11 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 ## Initial features
 - Home, History, Progress, and Library tabs
 - Create, resume, edit, and delete workout sessions
-- Add exercises with optional sets/reps/weight/intensity/fatigue
+- Add exercises in one step; new names are automatically saved and linked to their previous and future workout records
+- Automatically open the first optional set after adding an exercise
+- Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
 - Create sets independently per exercise; quick exercise-only logging is valid
-- Label techniques (drop set, myo-reps, ladder, rest-pause etc.) with notes; detailed technique structures are planned
+- Standard sets are the active format; other technique formats are deferred until designed
 - Cardio and sauna activity entries
 - Session and exercise notes, subjective session effort/fatigue
 - Auto-save to IndexedDB

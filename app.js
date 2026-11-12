@@ -7,10 +7,9 @@ const escapeHtml = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&
 const e = escapeHtml;
 const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
-const techniques = ['Standard','Superset','Triset','Giant set','Drop set','Mechanical drop set','Myo-reps','Ladder','Pyramid','Reverse pyramid','Rest-pause','Cluster','AMRAP','Isometric','Custom'];
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const suggestions = ['Shoulder Press','Pec Fly','Lat Pulldown','Bent-Over Row','Dumbbell Lateral Raise','Biceps Curl','Triceps Pushdown','Squat','Leg Press','Romanian Deadlift','Plank'];
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:''};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -24,8 +23,74 @@ function formatSummary(s) {
  const n=s.exercises?.length||0,c=s.activities?.filter(a=>a.type==='cardio').length||0,z=s.activities?.filter(a=>a.type==='sauna').length||0;
  return [n&&`${n} exercises`,c&&`${c} cardio`,z&&`${z} sauna`].filter(Boolean).join(' · ')||'No entries yet';
 }
+
+const normalizeName = name => String(name||'').trim().replace(/\s+/g,' ').toLocaleLowerCase();
+const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
+const hasSetData = set => Boolean(set && ['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined));
+const recordedSets = x => (x.sets||[]).filter(hasSetData);
+async function ensureExercise(name) {
+ const clean=String(name||'').trim().replace(/\s+/g,' ');
+ if (!clean) return null;
+ let found=state.exercises.find(x=>normalizeName(x.name)===normalizeName(clean));
+ if(!found) {
+  found={id:newId(),name:clean,muscle:'',equipment:'',createdAt:new Date().toISOString()};
+  await put('exercises',found);
+  state.exercises.push(found);
+ }
+ return found;
+}
+function previousPerformance(exerciseId,currentSessionId,currentDate) {
+ for(const s of state.sessions) {
+  if(s.id===currentSessionId || (currentDate && s.date>currentDate))continue;
+  const x=(s.exercises||[]).find(ex=>ex.exerciseId===exerciseId);
+  if(x) {
+   const populated=recordedSets(x);
+   return {date:s.date, sets:populated, total:x.sets?.length||0};
+  }
+ }
+ return null;
+}
+// One-time, non-destructive linkage of exercise entries from earlier app versions.
+async function linkExistingExercises() {
+ await refreshData();
+ let changed=0;
+ for(const session of state.sessions) {
+  let sessionChanged=false;
+  for(const entry of session.exercises||[]) {
+   if(entry.exerciseId)continue;
+   const master=await ensureExercise(entry.name);
+   if(!master)continue;
+   entry.exerciseId=master.id;
+   sessionChanged=true;
+   changed++;
+  }
+  if(sessionChanged)await put('sessions',session);
+ }
+ if(changed)await refreshData();
+}
+
 async function refreshData() {state.sessions=(await list('sessions')).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''));state.exercises=await list('exercises');}
-async function saveSession() {if(!state.session)return;state.session.updatedAt=new Date().toISOString();await put('sessions',state.session);await refreshData();}
+let saveQueue=Promise.resolve();
+let saveTimer=null;
+async function saveSession() {
+ if(!state.session)return;
+ const updatedAt=new Date().toISOString();
+ state.session.updatedAt=updatedAt;
+ const snapshot=JSON.parse(JSON.stringify(state.session));
+ saveQueue=saveQueue.catch(()=>{}).then(async()=>{await put('sessions',snapshot);await refreshData();});
+ return saveQueue;
+}
+function scheduleSave() {
+ if(!state.session)return;
+ clearTimeout(saveTimer);
+ saveTimer=setTimeout(()=>{saveTimer=null;saveSession().catch(err=>{console.error(err);toast('Could not save changes');});},250);
+}
+async function flushSave() {
+ if(!saveTimer)return;
+ clearTimeout(saveTimer);
+ saveTimer=null;
+ await saveSession();
+}
 async function render() {
  await refreshData();
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
@@ -44,26 +109,45 @@ function renderWorkout() {
  const s=state.session;
  return `<div class="card"><div class="row between" style="margin-bottom:14px"><span class="badge">${s.status==='active'?'In progress':'Saved session'}</span><button class="btn ghost small" data-action="close-workout">← Back</button></div>
  <div class="field-row">${textField('Workout name','session','name',s.name||'Workout')}${textField('Date','session','date',s.date,'date')}</div>
- <div style="margin-top:10px" class="field-row">${numberField('Overall intensity / 10','session','intensity',s.intensity,'max="10"')}${numberField('Overall fatigue / 10','session','fatigue',s.fatigue,'max="10"')}</div>
- <div style="margin-top:10px">${memoField('Session notes','session','notes',s.notes)}</div></div>
+ <details class="session-details"><summary>Workout intensity, fatigue and notes</summary><div class="field-row" style="margin-top:10px">${numberField('Overall intensity / 10','session','intensity',s.intensity,'min="1" max="10"')}${numberField('Overall fatigue / 10','session','fatigue',s.fatigue,'min="1" max="10"')}</div>
+ <div style="margin-top:10px">${memoField('Session notes','session','notes',s.notes)}</div></details></div>
  <div class="section-heading"><h2>Resistance exercises</h2><span class="pill">${s.exercises.length}</span></div>
  ${s.exercises.map((x,i)=>renderExercise(x,i)).join('')}
- <div class="card"><form data-form="add-exercise" class="stack"><div class="field"><label>Add any exercise</label><input name="exerciseName" list="exercise-suggestions" placeholder="e.g. Lateral Raise" required autocomplete="off"></div><datalist id="exercise-suggestions">${[...new Set([...suggestions,...state.exercises.map(x=>x.name)])].map(n=>`<option value="${e(n)}"></option>`).join('')}</datalist><button class="btn secondary wide" type="submit">＋ Add exercise</button></form></div>
+ <div class="card"><form data-form="add-exercise" class="stack"><div class="field"><label>Add any exercise</label><input name="exerciseName" list="exercise-suggestions" placeholder="e.g. Machine Lateral Raise" required autocomplete="off" enterkeyhint="done"></div><datalist id="exercise-suggestions">${[...new Set([...state.exercises.map(x=>x.name),...suggestions])].map(n=>`<option value="${e(n)}"></option>`).join('')}</datalist><button class="btn secondary wide" type="submit">＋ Add exercise</button></form></div>
  <div class="section-heading"><h2>Cardio and sauna</h2></div>${s.activities.map((x,i)=>renderActivity(x,i)).join('')}
  <div class="card"><div class="grid2">${button('＋ Cardio','add-cardio','secondary')}${button('＋ Sauna','add-sauna','secondary')}</div></div>
  <div class="card"><div class="stack">${button(s.status==='active'?'Finish workout':'Save changes','finish','wide')}${button('Close without finishing','close-workout','secondary wide')}</div><p class="helper">Changes save automatically on your device. You can edit this session later.</p></div>`;
 }
 function renderExercise(x,i) {
- const technique=selectField('Technique',`exercise:${x.id}`,'technique',x.technique||'Standard',techniques);
- return `<details class="detail"><summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${x.sets.length?x.sets.length+' set records · ':''}${e(x.technique||'Standard')}${x.intensity!==''&&x.intensity!=null?' · Effort '+e(x.intensity)+'/10':''}</small></div><span class="muted">Edit ▾</span></div></summary>
- <div class="detail-body"><div class="field-row">${textField('Exercise name',`exercise:${x.id}`,'name',x.name)}${technique}</div>
- <div class="field-row" style="margin-top:10px">${numberField('Intensity / 10',`exercise:${x.id}`,'intensity',x.intensity,'max="10"')}${numberField('Fatigue / 10',`exercise:${x.id}`,'fatigue',x.fatigue,'max="10"')}</div>
- <div style="margin-top:10px">${memoField('Notes / technique details',`exercise:${x.id}`,'notes',x.notes)}</div>
- <div class="section-heading"><h3>Optional set details</h3><span class="caption">Leave fields empty</span></div>
- ${x.sets.length?`<div class="set-grid helper"><span>Set</span><span>Weight (lb)</span><span>Reps</span><span></span></div>`:''}
- ${x.sets.map((set,j)=>`<div class="set-grid"><span>${j+1}</span><input aria-label="Set ${j+1} weight" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="—"><input aria-label="Set ${j+1} reps" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="—"><button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set">×</button></div>`).join('')}
- <div class="row between"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button><button class="btn danger small" data-action="delete-exercise" data-id="${x.id}">Remove exercise</button></div>
- <p class="helper">For advanced techniques, select the technique and record stages in notes. Detailed nested structures are planned.</p></div></details>`;
+ const isOpen=state.expanded.has(x.id);
+ const prev=x.exerciseId?previousPerformance(x.exerciseId,state.session?.id,state.session?.date):null;
+ const prevText=prev ? (prev.sets.length ?
+  prev.sets.slice(0,3).map(set=>[set.weight!==''&&set.weight!=null?set.weight+' lb':null,set.reps!==''&&set.reps!=null?set.reps+' reps':null,set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:null].filter(Boolean).join(' · ')).join(' | ') :
+  'Exercise previously logged without detailed sets') : '';
+ const scope='exercise:'+x.id;
+ const type=x.technique||'Standard';
+ return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
+ <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(type)} · ${x.sets?.length||0} set rows</small></div><span class="muted">▾</span></div></summary>
+ <div class="detail-body">
+ <div class="field-row">
+ ${textField('Exercise name',scope,'name',x.name)}
+ <div class="field"><label>Technique</label><div class="technique-label">${e(type)}</div></div>
+ </div>
+ ${prev?`<p class="previous-performance"><strong>Previous · ${displayDate(prev.date)}</strong><span>${e(prevText)}</span></p>`:''}
+ <div class="set-grid set-heading"><span>SET</span><span>WEIGHT (LB)</span><span>REPS</span><span>RPE</span><span></span></div>
+ ${(x.sets||[]).map((set,j)=>`<div class="set-grid">
+ <span class="set-number">${j+1}</span>
+ <input aria-label="Set ${j+1} weight in pounds" inputmode="decimal" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="lb">
+ <input aria-label="Set ${j+1} repetitions" inputmode="numeric" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="—">
+ <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="1–10">
+ <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>`).join('')}
+ <div class="row between wrap" style="margin-top:12px">
+ <button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button>
+ <button class="btn danger small" data-action="delete-exercise" data-id="${x.id}">Remove exercise</button>
+ </div>
+ <details class="exercise-notes"><summary class="helper">Optional exercise notes</summary>${memoField('Notes',scope,'notes',x.notes||'')}</details>
+ <p class="helper">Set fields are optional. RPE 10 = maximum effort; 1 = very little effort.</p>
+ </div></details>`;
 }
 function renderActivity(a) {
  const scope=`activity:${a.id}`;
@@ -86,15 +170,35 @@ function renderProgress() {
  const ratings=sessions.map(s=>Number(s.intensity)).filter(n=>n>0);
  const count=sessions.reduce((acc,s)=>acc+s.exercises.length,0);
  const allExercises=new Map();
- for(const s of sessions)for(const x of s.exercises)allExercises.set(x.name,(allExercises.get(x.name)||0)+1);
- const top=[...allExercises.entries()].sort((a,b)=>b[1]-a[1]).slice(0,7);
+ for(const s of sessions)for(const x of s.exercises){const key=x.exerciseId||normalizeName(x.name);const item=allExercises.get(key)||{name:x.name,count:0};item.count++;allExercises.set(key,item);}
+ const top=[...allExercises.values()].sort((a,b)=>b.count-a.count).slice(0,7);
  return `<div class="grid2"><div class="stat"><span>Finished sessions</span><strong>${sessions.length}</strong></div><div class="stat"><span>Recent 7 days</span><strong>${recent.length}</strong></div><div class="stat"><span>Exercise entries</span><strong>${count}</strong></div><div class="stat"><span>Average effort</span><strong>${ratings.length?(ratings.reduce((a,b)=>a+b,0)/ratings.length).toFixed(1):'—'}</strong></div></div>
- <div class="section-heading"><h2>Most logged exercises</h2></div><div class="card">${top.length?top.map(([name,n])=>`<div style="margin-bottom:15px"><div class="row between"><span>${e(name)}</span><span class="helper">${n} sessions</span></div><div class="line" style="margin-top:7px"><span style="width:${Math.round(n/top[0][1]*100)}%"></span></div></div>`).join(''):'<div class="empty">Log workouts to see your activity trends.</div>'}<p class="helper">Exercise frequency is not equivalent to training volume or hypertrophy. Missing measurements are not treated as zero.</p></div>`;
+ <div class="section-heading"><h2>Most logged exercises</h2></div><div class="card">${top.length?top.map(({name,count:n})=>`<div style="margin-bottom:15px"><div class="row between"><span>${e(name)}</span><span class="helper">${n} entries</span></div><div class="line" style="margin-top:7px"><span style="width:${Math.round(n/top[0].count*100)}%"></span></div></div>`).join(''):'<div class="empty">Log workouts to see your activity trends.</div>'}<p class="helper">Exercise frequency is not equivalent to training volume or hypertrophy. Missing measurements are not treated as zero.</p></div>`;
 }
 function renderLibrary() {
- return `<div class="card"><h2>Custom exercise library</h2><form data-form="library" class="stack"><div class="field"><label>Name</label><input name="name" placeholder="Exercise name" required></div><div class="field-row"><div class="field"><label>Primary muscle</label><input name="muscle" placeholder="Shoulders"></div><div class="field"><label>Equipment</label><input name="equipment" placeholder="Dumbbells"></div></div><button class="btn wide" type="submit">Add exercise</button></form></div>
- <div class="section-heading"><h2>My exercises</h2><span class="pill">${state.exercises.length}</span></div>
- ${state.exercises.length?state.exercises.map(x=>`<div class="item"><div class="row between"><div class="grow"><div class="item-title">${e(x.name)}</div><small>${e(x.muscle||'Unassigned')} · ${e(x.equipment||'No equipment')}</small></div><button class="btn danger small" data-action="delete-library" data-id="${x.id}">Delete</button></div></div>`).join(''):'<div class="card empty">Custom exercises will appear here. Common movements are available as suggestions when logging.</div>'}`;
+ if(state.libraryDetail) {
+  const ex=state.exercises.find(x=>x.id===state.libraryDetail);
+  if(!ex){state.libraryDetail=null;return '<div class="card">Exercise not found.</div>';}
+  const records=state.sessions.flatMap(s=>(s.exercises||[]).filter(x=>x.exerciseId===ex.id).map(x=>({session:s,entry:x})));
+  return `<button class="btn secondary small" data-action="library-back">← All exercises</button>
+  <div class="card" style="margin-top:12px"><h2>${e(ex.name)}</h2>
+  <p class="helper">${e(ex.muscle||'Muscle unspecified')} · ${e(ex.equipment||'Equipment unspecified')}</p>
+  <p>${records.length} recorded workout entries</p></div>
+  <div class="section-heading"><h2>Performance history</h2></div>
+  ${records.length?records.map(({session,entry})=>`<div class="item">
+   <div class="row between"><div class="grow"><strong>${displayDate(session.date)}</strong><p class="helper" style="margin:4px 0">${e(session.name)}</p>
+   <p class="helper" style="margin:4px 0">${recordedSets(entry).map(set=>[set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',set.rpe?'RPE '+set.rpe:''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details'}</p></div>
+   <button class="btn small secondary" data-action="open" data-id="${session.id}">View</button></div></div>`).join(''):'<div class="card empty">No history for this exercise yet.</div>'}`;
+ }
+ return `<div class="card"><h2>Exercise library</h2><p class="helper">New exercises are added here automatically when you log them. All workouts using the same exercise are linked.</p>
+ <form data-form="library" class="stack"><div class="field"><label>New exercise (optional)</label><input name="name" placeholder="Exercise name" required></div><div class="field-row">
+ <div class="field"><label>Primary muscle</label><input name="muscle" placeholder="Shoulders"></div>
+ <div class="field"><label>Equipment</label><input name="equipment" placeholder="Dumbbells"></div></div>
+ <button class="btn secondary wide" type="submit">Add to library</button></form></div>
+ <div class="section-heading"><h2>Saved exercises</h2><span class="pill">${state.exercises.length}</span></div>
+ ${state.exercises.length?state.exercises.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div class="item"><div class="row between">
+ <div class="grow"><div class="item-title">${e(x.name)}</div><small>${e(x.muscle||'Unassigned')} · ${e(x.equipment||'No equipment')}</small></div>
+ <button class="btn small secondary" data-action="view-library" data-id="${x.id}">History</button></div></div>`).join(''):'<div class="card empty">Your exercises will appear here automatically as you log them.</div>'}`;
 }
 function renderSettings() {
  return `<div class="card"><h2>Data and privacy</h2><p>Your training records are stored locally in this browser using IndexedDB. They are not uploaded to GitHub or Cloudflare.</p><p class="notice">Deleting browser data or uninstalling the app can permanently remove records. Export a full backup regularly.</p><div class="stack" style="margin-top:15px">${button('Download full JSON backup','full-backup','wide')}${button('Restore from JSON backup','restore','secondary wide')}<input id="restore-file" type="file" accept="application/json,.json" hidden></div></div>
@@ -104,41 +208,68 @@ function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderReport() {
- const ss=selected();return `<div class="no-print row between" style="margin-bottom:12px">${button('← History','report-close','secondary small')}${button('Print / Save PDF','print','small')}</div><div class="report print-area"><h2>FitnessLog training report</h2><p>${e(state.start||'All dates')} through ${e(state.end||'present')}</p><p class="muted">${ss.length} workouts · Export created ${displayDate(today())}. Blank fields were not recorded.</p>${ss.map(s=>`<section style="margin:22px 0"><h3>${e(s.name)} — ${displayDate(s.date)}</h3><p>Effort: ${e(s.intensity||'Not recorded')} · Fatigue: ${e(s.fatigue||'Not recorded')}</p><p>${e(s.notes||'')}</p><table><thead><tr><th>Exercise</th><th>Technique</th><th>Set details</th><th>Effort</th></tr></thead><tbody>${s.exercises.map(x=>`<tr><td>${e(x.name)}${x.notes?' — '+e(x.notes):''}</td><td>${e(x.technique||'Standard')}</td><td>${x.sets.map(set=>[set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':''].filter(Boolean).join(' × ')||'Set logged').join('; ')||'Not recorded'}</td><td>${e(x.intensity||'—')}</td></tr>`).join('')}</tbody></table>${s.activities.length?`<p>${s.activities.map(a=>`${e(a.type)}: ${e(a.mode)} ${a.duration?e(a.duration)+' min':''} ${a.distance?e(a.distance)+' km':''} ${a.notes?e(a.notes):''}`).join('; ')}</p>`:''}</section>`).join('')}</div>`;
+ const ss=selected();
+ const setDescription = set=>[
+  set.weight!==''&&set.weight!=null?set.weight+' lb':'',
+  set.reps!==''&&set.reps!=null?set.reps+' reps':'',
+  set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:''
+ ].filter(Boolean).join(' · ');
+ return `<div class="no-print row between" style="margin-bottom:12px">
+ ${button('← History','report-close','secondary small')}${button('Print / Save PDF','print','small')}</div>
+ <div class="report print-area">
+ <h2>FitnessLog training report</h2><p>${e(state.start||'All dates')} through ${e(state.end||'present')}</p>
+ <p class="muted">${ss.length} workouts · Export created ${displayDate(today())}. Blank fields were not recorded.</p>
+ ${ss.map(s=>`<section style="margin:22px 0"><h3>${e(s.name)} — ${displayDate(s.date)}</h3>
+ <p>Overall intensity: ${e(s.intensity||'Not recorded')} · Overall fatigue: ${e(s.fatigue||'Not recorded')}</p>
+ <p>${e(s.notes||'')}</p>
+ <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RPE)</th></tr></thead><tbody>
+ ${(s.exercises||[]).map(x=>`<tr><td>${e(x.name)}${x.notes?' — '+e(x.notes):''}</td>
+ <td>${e(x.technique||'Standard')}</td>
+ <td>${recordedSets(x).map(set=>e(setDescription(set))).join('; ')||'No set data recorded'}</td>
+ </tr>`).join('')}
+ </tbody></table>
+ ${s.activities?.length?`<p>${s.activities.map(a=>`${e(a.type)}: ${e(a.mode)} ${a.duration?e(a.duration)+' min':''} ${a.distance?e(a.distance)+' km':''} ${a.notes?e(a.notes):''}`).join('; ')}</p>`:''}
+ </section>`).join('')}</div>`;
 }
 function download(name, body, mime) {const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function csvValue(x) {return '"'+String(x??'').replace(/"/g,'""')+'"';}
 function exportCsv() {
- const rows=[['date','workout','exercise','technique','set','weight_lb','reps','exercise_intensity','exercise_fatigue','session_intensity','session_fatigue','notes']];
+ const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes']];
  for(const s of selected()) {
- for(const x of s.exercises) {
- if(x.sets.length) x.sets.forEach((set,i)=>rows.push([s.date,s.name,x.name,x.technique,i+1,set.weight,set.reps,x.intensity,x.fatigue,s.intensity,s.fatigue,x.notes]));
- else rows.push([s.date,s.name,x.name,x.technique,'','','',x.intensity,x.fatigue,s.intensity,s.fatigue,x.notes]);
+  for(const x of s.exercises||[]) {
+   const sets=recordedSets(x);
+   if(sets.length) sets.forEach((set,i)=>rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes]));
+   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes]);
+  }
+  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes]);
  }
- for(const a of s.activities) rows.push([s.date,s.name,a.type+': '+a.mode,'activity','','',a.duration,a.intensity,'',s.intensity,s.fatigue,a.notes]);
- }
- download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\r\n'),'text/csv;charset=utf-8');
+ download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\\r\\n'),'text/csv;charset=utf-8');
 }
 async function restoreBackup(file) {
+ await flushSave();
  const parsed=JSON.parse(await file.text());
  if(parsed.app!=='FitnessLog'||!Array.isArray(parsed.sessions)||!Array.isArray(parsed.exercises))throw Error('Unsupported backup format');
  if(!confirm('Restore this backup? This will REPLACE all workouts and custom exercises on this device.'))return;
- await replaceAll('sessions',parsed.sessions);await replaceAll('exercises',parsed.exercises);state.session=null;state.tab='home';await render();toast('Backup restored');
+ await replaceAll('sessions',parsed.sessions);await replaceAll('exercises',parsed.exercises);state.session=null;state.tab='home';state.libraryDetail=null;await linkExistingExercises();await render();toast('Backup restored');
 }
 async function action(name,el) {
  const s=state.session;
  if(name==='start') {
+  await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
+  state.expanded=new Set(active?.exercises?.map(x=>x.id)||[]);
   state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
   await saveSession();return render();
  }
- if(name==='open') {state.session=await get('sessions',el.dataset.id);return render();}
- if(name==='close-workout'){state.session=null;state.tab='home';return render();}
+ if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
+ if(name==='close-workout'){await flushSave();state.session=null;state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
- if(name==='finish'){s.status='finished';await saveSession();state.session=null;state.tab='history';toast('Workout saved');return render();}
- if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);const prev=x.sets.at(-1);x.sets.push({id:newId(),weight:prev?.weight||'',reps:prev?.reps||''});await saveSession();return render();}
+ if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
+ if(name==='library-back'){state.libraryDetail=null;return render();}
+ if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='add-set'){const x=s.exercises.find(x=>x.id===el.dataset.id);x.sets.push(blankSet());state.expanded.add(x.id);await saveSession();await render();document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();return;}
  if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
- if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
+ if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
  if(name==='delete-activity'){s.activities=s.activities.filter(a=>a.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
@@ -158,19 +289,70 @@ function findScope(scope){
  if(kind==='set')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId);
 }
 document.addEventListener('click',async ev=>{
- const nav=ev.target.closest('[data-tab]');if(nav){state.tab=nav.dataset.tab;state.report=false;state.session=null;await render();return;}
+ const nav=ev.target.closest('[data-tab]');if(nav){await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.libraryDetail=null;await render();return;}
  const el=ev.target.closest('[data-action]');if(!el)return;
  try{await action(el.dataset.action,el);}catch(error){console.error(error);toast('Unable to complete action');}
 });
+function validateEntry(input,value,showError=false) {
+ const {field}=input.dataset;
+ if(input.type==='number' && value!=='' && (!Number.isFinite(Number(value))||Number(value)<0)) {
+  if(showError)toast('Enter a nonnegative number');
+  return false;
+ }
+ if(['intensity','fatigue'].includes(field)&&value!==''&&(Number(value)<1||Number(value)>10)) {
+  if(showError)toast('Rating must be between 1 and 10');
+  return false;
+ }
+ if(field==='rpe'&&value!==''&&(Number(value)<1||Number(value)>10)) {
+  if(showError)toast('RPE must be between 1 and 10');
+  return false;
+ }
+ return true;
+}
+document.addEventListener('input',ev=>{
+ const {scope,field}=ev.target.dataset||{};
+ if(!scope||!field||scope==='filter') {
+  if(scope==='filter')state[field]=ev.target.value;
+  return;
+ }
+ // Exercise names are resolved on change, not during partial typing.
+ if(field==='name'&&scope.startsWith('exercise:'))return;
+ const target=findScope(scope);if(!target)return;
+ if(!validateEntry(ev.target,ev.target.value))return;
+ target[field]=ev.target.value;
+ scheduleSave();
+});
+document.addEventListener('toggle',ev=>{
+ const card=ev.target;
+ if(!card.matches?.('[data-exercise-card]')||!document.contains(card))return;
+ if(card.open)state.expanded.add(card.dataset.exerciseCard);
+ else state.expanded.delete(card.dataset.exerciseCard);
+},true);
 document.addEventListener('change',async ev=>{
- if(ev.target.id==='restore-file'){const f=ev.target.files?.[0];if(f)try{await restoreBackup(f);}catch(err){console.error(err);toast('Invalid or unreadable backup');}return;}
- const {scope,field}=ev.target.dataset;if(!scope||!field)return;
+ if(ev.target.id==='restore-file'){
+  const f=ev.target.files?.[0];
+  if(f)try{await restoreBackup(f);}catch(err){console.error(err);toast('Invalid or unreadable backup');}
+  return;
+ }
+ const {scope,field}=ev.target.dataset||{};
+ if(!scope||!field)return;
  const target=findScope(scope);if(!target)return;
  const value=ev.target.value;
- if(ev.target.type==='number'&&value!==''&&!Number.isFinite(Number(value)))return;
- if(field==='intensity'||field==='fatigue'){if(value!==''&&(Number(value)<0||Number(value)>10)){toast('Rating must be 0–10');return;}}
+ if(!validateEntry(ev.target,value,true)) {
+  ev.target.value=target[field]??'';
+  return;
+ }
+ if(scope==='filter'){state[field]=value;return;}
+ if(field==='name'&&scope.startsWith('exercise:')) {
+  const master=await ensureExercise(value);
+  if(!master){ev.target.value=target.name;toast('Enter an exercise name');return;}
+  target.name=master.name;
+  target.exerciseId=master.id;
+  await saveSession();
+  await render();
+  return;
+ }
  target[field]=value;
- if(scope==='filter')return;
  try{await saveSession();}catch(err){console.error(err);toast('Could not save change');}
 });
 document.addEventListener('submit',async ev=>{
@@ -178,12 +360,19 @@ document.addEventListener('submit',async ev=>{
  const data=new FormData(form);
  if(form.dataset.form==='add-exercise'){
   const name=String(data.get('exerciseName')||'').trim();if(!name)return;
-  state.session.exercises.push({id:newId(),name,technique:'Standard',intensity:'',fatigue:'',notes:'',sets:[]});await saveSession();await render();return;
+  const master=await ensureExercise(name);
+  const entry={id:newId(),exerciseId:master.id,name:master.name,technique:'Standard',notes:'',sets:[blankSet()]};
+  state.session.exercises.push(entry);state.expanded.add(entry.id);
+  await saveSession();await render();
+  document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});return;
  }
  if(form.dataset.form==='library'){
   const name=String(data.get('name')||'').trim();if(!name)return;
-  await put('exercises',{id:newId(),name,muscle:String(data.get('muscle')||''),equipment:String(data.get('equipment')||'')});await render();toast('Exercise saved');
+  const wasSaved=state.exercises.some(x=>normalizeName(x.name)===normalizeName(name));
+  const master=await ensureExercise(name);
+  if(!wasSaved){master.muscle=String(data.get('muscle')||'');master.equipment=String(data.get('equipment')||'');await put('exercises',master);}
+  await render();toast(wasSaved?'Exercise already exists':'Exercise saved');
  }
 });
-$('#settings-button').addEventListener('click',()=>{state.session=null;state.report=false;state.tab='settings';render();});
-(async()=>{try{await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
+$('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
+(async()=>{try{await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
