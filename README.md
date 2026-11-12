@@ -33,6 +33,10 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 
 ## Initial features
 - Home, History, Progress, and Library tabs
+- History defaults to a detailed workout list with intensity, fatigue, logged repetitions, logged sets, and a Review/Edit action
+- Calendar view shows workout names by day and highlights completed workout days green; select a date to review its entries
+- Export tools are collapsible and placed below workout history
+- Delete a workout from the bottom of its editor, with confirmation
 - Create, resume, edit, and delete workout sessions
 - Add exercises in one step; new names are automatically saved and linked to their previous and future workout records
 - Automatically open the first optional set after adding an exercise
