@@ -249,7 +249,7 @@ function renderRestTimer(x) {
   '<div class="rest-timer-top"><span class="rest-title">Rest timer</span><span class="rest-timer-status" data-rest-status>'+e(label)+'</span></div>'+
   '<div class="rest-timer-main"><output class="rest-timer-clock" data-rest-clock aria-label="Time remaining">'+restTimeLabel(time)+'</output>'+
   '<div class="rest-timer-buttons">'+
-  '<button type="button" class="btn small" data-action="rest-start" data-id="'+e(x.id)+'" data-rest-start>Start</button>'+
+  '<button type="button" class="btn small" data-action="rest-start" data-id="'+e(x.id)+'" data-rest-start>Start in app</button>'+
   control('Pause','rest-pause','data-rest-pause '+(!isActive||timer.mode!=='running'?'hidden':''))+
   control('Resume','rest-resume','data-rest-resume '+(!isActive||timer.mode!=='paused'?'hidden':''))+
   control('Reset','rest-reset','data-rest-reset '+(!isActive?'hidden':''))+'</div></div>'+
@@ -312,7 +312,7 @@ function refreshRestTimers(){
   if(status)status.textContent=active?timer.mode==='running'?'Counting down':timer.mode==='paused'?'Paused':'Rest complete':
     timer.mode==='running'?'Rest active on '+timer.exerciseName:'Ready';
   const start=panel.querySelector('[data-rest-start]');
-  if(start)start.textContent=active&&timer.mode==='running'?'Restart':'Start';
+  if(start)start.textContent=active&&timer.mode==='running'?'Restart':'Start in app';
   const pause=panel.querySelector('[data-rest-pause]');
   const resume=panel.querySelector('[data-rest-resume]');
   const reset=panel.querySelector('[data-rest-reset]');
