@@ -2,6 +2,7 @@ import {list, get, put, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {restPreference,setRestPreference,readRestTimer,startRestTimer,pauseRestTimer,resumeRestTimer,resetRestTimer,adjustRestTimer,markRestAlerted,restTimeLabel,iphoneShortcutUrl} from './rest-timer.js';
 
 const $ = (s) => document.querySelector(s);
 const main = $('#main');
@@ -235,6 +236,32 @@ const historicalField = (set,key,fallback) => {
  const value=set?.[key];
  return value!==''&&value!==null&&value!==undefined?String(value):fallback;
 };
+function renderRestTimer(x) {
+ const key=x.exerciseId||normalizeName(x.name)||x.id;
+ const preference=restPreference(key);
+ const timer=readRestTimer();
+ const isActive=timer.mode!=='idle'&&timer.exerciseId===key;
+ const time=isActive?timer.remaining:preference;
+ const label=isActive?timer.mode==='running'?'Counting down':timer.mode==='paused'?'Paused':'Rest complete':'Ready';
+ const ios=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+ const control=(text,action,attrs='')=>'<button type="button" class="btn secondary small" data-action="'+action+'" data-id="'+e(x.id)+'" '+attrs+'>'+text+'</button>';
+ return '<section class="rest-timer" data-exercise-timer="'+e(key)+'" aria-label="Rest timer for '+e(x.name)+'">'+
+  '<div class="rest-timer-top"><span class="rest-title">Rest timer</span><span class="rest-timer-status" data-rest-status>'+e(label)+'</span></div>'+
+  '<div class="rest-timer-main"><output class="rest-timer-clock" data-rest-clock aria-label="Time remaining">'+restTimeLabel(time)+'</output>'+
+  '<div class="rest-timer-buttons">'+
+  '<button type="button" class="btn small" data-action="rest-start" data-id="'+e(x.id)+'" data-rest-start>Start</button>'+
+  control('Pause','rest-pause','data-rest-pause '+(!isActive||timer.mode!=='running'?'hidden':''))+
+  control('Resume','rest-resume','data-rest-resume '+(!isActive||timer.mode!=='paused'?'hidden':''))+
+  control('Reset','rest-reset','data-rest-reset '+(!isActive?'hidden':''))+'</div></div>'+
+  '<div class="rest-timer-presets" role="group" aria-label="Rest duration">'+
+  [60,90,120,180].map(seconds=>'<button type="button" class="rest-preset'+(seconds===preference?' selected':'')+'" data-action="rest-preset" data-id="'+e(x.id)+'" data-duration="'+seconds+'" aria-pressed="'+(seconds===preference)+'">'+restTimeLabel(seconds)+'</button>').join('')+
+  control('−15','rest-minus')+control('+15','rest-plus')+'</div>'+
+  (ios?'<div class="rest-iphone"><button type="button" class="btn secondary small wide" data-action="rest-iphone" data-id="'+e(x.id)+'">Start iPhone lock-screen alarm</button>'+
+  '<details class="rest-iphone-setup"><summary>One-time iPhone setup</summary>'+
+  '<p>Create an Apple Shortcut named <strong>FitnessLog Rest Timer</strong> with a <strong>Get Numbers from Input</strong> action using Shortcut Input, then a <strong>Start Timer</strong> action set to that number of seconds. Save it, then use Start iPhone lock-screen alarm. The Clock timer runs independently; pause or cancel it in the Clock app.</p>'+
+  '<a href="shortcuts://create-shortcut">Open Shortcuts to create it</a></details></div>':'')+
+  '</section>';
+}
 function renderExercise(x,i) {
  const isOpen=state.expanded.has(x.id);
  const prev=x.exerciseId?previousPerformance(x.exerciseId,state.session?.id,state.session?.date):null;
@@ -247,6 +274,7 @@ function renderExercise(x,i) {
  ${textField('Exercise name',scope,'name',x.name)}
  <div class="field"><label>Technique</label><div class="technique-label">${e(type)}</div></div>
  </div>
+ ${renderRestTimer(x)}
  ${prev?`<section class="previous-reference">
  <button type="button" class="previous-toggle" data-action="toggle-previous" data-id="${e(x.id)}" aria-expanded="${state.previousOpenId===x.id}" aria-controls="previous-panel-${e(x.id)}">
   <span class="previous-toggle-label"><span class="previous-icon" aria-hidden="true">↶</span>Previous performance <small>${e(displayDate(prev.date))}</small></span>
