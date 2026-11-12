@@ -42,7 +42,7 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Automatically open the first optional set after adding an exercise
 - When adding a new exercise, collapse earlier exercise cards so only the newest entry remains expanded
 - Each new set starts with empty stored fields. If the corresponding set in the last completed exercise session has recorded weight, reps, or RPE, those values appear only as faded placeholders; they are never counted as new performance.
-- A collapsed Previous performance section displays the previous completed workout's full exercise sets and notes
+- A compact Previous performance row with a visible chevron stays closed until tapped, then reveals the previous completed workout's sets and notes; tap again to hide them
 - Live exercise lookup searches saved exercise names by partial matches (including middle words), capitalization-insensitive matching, and likely spelling corrections
 - Selecting an existing suggestion uses its permanent exercise ID; similar names require confirmation before a separate record is created
 - Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
