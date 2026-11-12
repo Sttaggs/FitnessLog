@@ -9,7 +9,8 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const suggestions = ['Shoulder Press','Pec Fly','Lat Pulldown','Bent-Over Row','Dumbbell Lateral Raise','Biceps Curl','Triceps Pushdown','Squat','Leg Press','Romanian Deadlift','Plank'];
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null};
+const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:''};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -116,7 +117,14 @@ function renderWorkout() {
  <div class="card"><form data-form="add-exercise" class="stack"><div class="field"><label>Add any exercise</label><input name="exerciseName" list="exercise-suggestions" placeholder="e.g. Machine Lateral Raise" required autocomplete="off" enterkeyhint="done"></div><datalist id="exercise-suggestions">${[...new Set([...state.exercises.map(x=>x.name),...suggestions])].map(n=>`<option value="${e(n)}"></option>`).join('')}</datalist><button class="btn secondary wide" type="submit">＋ Add exercise</button></form></div>
  <div class="section-heading"><h2>Cardio and sauna</h2></div>${s.activities.map((x,i)=>renderActivity(x,i)).join('')}
  <div class="card"><div class="grid2">${button('＋ Cardio','add-cardio','secondary')}${button('＋ Sauna','add-sauna','secondary')}</div></div>
- <div class="card"><div class="stack">${button(s.status==='active'?'Finish workout':'Save changes','finish','wide')}${button('Close without finishing','close-workout','secondary wide')}</div><p class="helper">Changes save automatically on your device. You can edit this session later.</p></div>`;
+ <div class="card"><div class="stack">
+ ${button(s.status==='active'?'Finish workout':'Save changes','finish','wide')}
+ ${button('Close without finishing','close-workout','secondary wide')}
+ </div><p class="helper">Changes save automatically on your device. You can edit this session later.</p>
+ <div class="delete-workout-area">
+  ${button('Delete workout','delete-workout','danger wide')}
+  <p class="helper">Deleting removes this workout from your history and progress statistics.</p>
+ </div></div>`;
 }
 function renderExercise(x,i) {
  const isOpen=state.expanded.has(x.id);
@@ -159,10 +167,104 @@ function renderActivity(a) {
  <div style="margin-top:10px">${button('Remove activity','delete-activity','danger small').replace('data-action="delete-activity"',`data-action="delete-activity" data-id="${a.id}"`)}</div>
  </div></details>`;
 }
+
+function historyMetrics(session) {
+ const exercises=session.exercises||[];
+ const savedSets=exercises.flatMap(x=>recordedSets(x));
+ const repSets=savedSets.filter(set=>set.reps!==''&&set.reps!==null&&set.reps!==undefined&&Number.isFinite(Number(set.reps)));
+ const reps=repSets.length?repSets.reduce((total,set)=>total+Number(set.reps),0):null;
+ const partialReps=reps!==null&&exercises.some(x=>!recordedSets(x).length||(x.sets||[]).some(set=>!hasSetData(set)||set.reps===''||set.reps===null||set.reps===undefined));
+ const cardio=(session.activities||[]).filter(a=>a.type==='cardio');
+ const cardioMinutes=cardio.map(a=>Number(a.duration)).filter(n=>Number.isFinite(n)&&n>0).reduce((a,b)=>a+b,0);
+ return {exercises:exercises.length,sets:savedSets.length,reps,partialReps,cardio:cardio.length,cardioMinutes};
+}
+function historyEntry(session) {
+ const m=historyMetrics(session);
+ const metric=(label,value,qualifier='')=>'<div class="history-metric"><span>'+e(label)+'</span><strong>'+e(value)+'</strong>'+ (qualifier?'<small>'+e(qualifier)+'</small>':'')+'</div>';
+ const intensity=(session.intensity!==''&&session.intensity!=null)?session.intensity+'/10':'—';
+ const fatigue=(session.fatigue!==''&&session.fatigue!=null)?session.fatigue+'/10':'—';
+ return `<button type="button" class="history-entry" data-action="open" data-id="${session.id}" aria-label="Review ${e(session.name||'Workout')} on ${e(displayDate(session.date))}">
+ <div class="row between history-entry-head">
+  <div class="grow"><div class="item-title">${e(session.name||'Workout')}</div>
+  <div class="caption">${e(displayDate(session.date))} · ${m.exercises} exercises${m.cardio?' · '+m.cardio+' cardio':''}${m.cardioMinutes?' · '+m.cardioMinutes+' cardio min':''}</div></div>
+  <span class="history-status ${session.status==='finished'?'completed':'unfinished'}">${session.status==='finished'?'Completed':'In progress'}</span>
+ </div>
+ <div class="history-metrics">
+  ${metric('Intensity',intensity)}
+  ${metric('Fatigue',fatigue)}
+  ${metric('Logged reps',m.reps===null?'—':m.reps,m.partialReps?'Partial':'')}
+  ${metric('Logged sets',m.sets)}
+ </div>
+ <div class="history-entry-foot"><span>${e(formatSummary(session))}</span><span>Review / Edit ›</span></div>
+ </button>`;
+}
+function calendarMarkup() {
+ const [year,month]=state.historyMonth.split('-').map(Number);
+ const first=new Date(year,month-1,1);
+ const daysInMonth=new Date(year,month,0).getDate();
+ const offset=first.getDay();
+ const cells=Math.ceil((offset+daysInMonth)/7)*7;
+ const byDate=new Map();
+ for(const session of state.sessions){
+  if(!session.date)continue;
+  if(!byDate.has(session.date))byDate.set(session.date,[]);
+  byDate.get(session.date).push(session);
+ }
+ const dayCells=Array.from({length:cells},(_,index)=>{
+  const day=index-offset+1;
+  if(day<1||day>daysInMonth)return '<div class="calendar-empty" aria-hidden="true"></div>';
+  const date=state.historyMonth+'-'+String(day).padStart(2,'0');
+  const workouts=byDate.get(date)||[];
+  const completed=workouts.some(s=>s.status==='finished');
+  const unfinished=workouts.length>0&&!completed;
+  const names=workouts.slice(0,2).map(s=>'<span class="calendar-workout-name">'+e(s.name||'Workout')+'</span>').join('');
+  const more=workouts.length>2?'<span class="calendar-extra">+'+(workouts.length-2)+' more</span>':'';
+  const selected=state.historyDate===date;
+  return `<button type="button" class="calendar-day ${completed?'has-completed':''} ${unfinished?'has-unfinished':''} ${selected?'selected':''}" data-action="history-day" data-date="${date}" aria-pressed="${selected}" aria-label="${e(displayDate(date))}: ${workouts.length} workouts${completed?', completed workout recorded':''}">
+   <span class="calendar-day-number">${day}</span>${names}${more}
+  </button>`;
+ }).join('');
+ const monthName=first.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+ const chosen=state.historyDate?byDate.get(state.historyDate)||[]:[];
+ return `<div class="history-calendar">
+ <div class="calendar-header">
+  <button type="button" class="icon-button" data-action="history-prev-month" aria-label="Previous month">‹</button>
+  <h2>${e(monthName)}</h2>
+  <button type="button" class="icon-button" data-action="history-next-month" aria-label="Next month">›</button>
+ </div>
+ <div class="calendar-weekdays">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(n=>'<span>'+n+'</span>').join('')}</div>
+ <div class="calendar-grid">${dayCells}</div>
+ <p class="helper calendar-legend"><span class="calendar-legend-swatch"></span> Green indicates at least one completed workout.</p>
+ </div>
+ <div class="section-heading"><h2>${state.historyDate?'Workouts · '+e(displayDate(state.historyDate)):'Select a day'}</h2>${state.historyDate?'<span class="pill">'+chosen.length+'</span>':''}</div>
+ ${state.historyDate?(chosen.length?chosen.map(historyEntry).join(''):'<div class="card empty">No workouts recorded on this date.</div>'):'<div class="card empty">Tap a day to review its workout entries.</div>'}`;
+}
 function renderHistory() {
- return `<div class="card"><h2>Export by date</h2><div class="field-row">${textField('From','filter','start',state.start||'','date')}${textField('Through','filter','end',state.end||'','date')}</div><div class="row wrap" style="margin-top:12px">${button('JSON backup','export-json','secondary small')}${button('CSV','export-csv','secondary small')}${button('PDF report','report','secondary small')}</div><p class="helper">Date filters apply to exports. A full JSON backup with no dates includes all records and your exercise library.</p></div>
- <div class="section-heading"><h2>Sessions</h2><span class="pill">${state.sessions.length}</span></div>
- ${state.sessions.length?state.sessions.map(s=>`<div class="item"><div class="row between"><div class="grow"><div class="item-title">${e(s.name)}</div><small>${displayDate(s.date)} · ${e(formatSummary(s))} · ${s.status==='active'?'Unfinished':'Finished'}</small></div><button class="btn small secondary" data-action="open" data-id="${s.id}">Edit</button></div></div>`).join(''):'<div class="card empty">No sessions have been recorded.</div>'}`;
+ const isList=state.historyView==='list';
+ return `<div class="history-intro">
+  <p class="muted">Review your training records. Select any workout to see its sets and make changes.</p>
+ </div>
+ <div class="history-view-toggle" role="group" aria-label="Workout history view">
+  <button type="button" data-action="history-view" data-view="list" aria-pressed="${isList}" class="${isList?'active':''}">List</button>
+  <button type="button" data-action="history-view" data-view="calendar" aria-pressed="${!isList}" class="${!isList?'active':''}">Calendar</button>
+ </div>
+ ${isList?`
+  <div class="section-heading"><h2>Workout log</h2><span class="pill">${state.sessions.length} entries</span></div>
+  ${state.sessions.length?state.sessions.map(historyEntry).join(''):'<div class="card empty">No workouts recorded yet.</div>'}
+ `:calendarMarkup()}
+ <details class="card history-export">
+  <summary><span>Export workout history</span><span class="helper">PDF · CSV · JSON</span></summary>
+  <div class="export-content">
+   <p class="helper">Choose an optional date range and download your records.</p>
+   <div class="field-row">${textField('From','filter','start',state.start||'','date')}${textField('Through','filter','end',state.end||'','date')}</div>
+   <div class="row wrap" style="margin-top:12px">
+    ${button('PDF report','report','secondary small')}
+    ${button('CSV','export-csv','secondary small')}
+    ${button('JSON','export-json','secondary small')}
+   </div>
+   <p class="helper">For an unfiltered, complete JSON backup, use Settings. Missing training measurements remain blank.</p>
+  </div>
+ </details>`;
 }
 function renderProgress() {
  const sessions=state.sessions.filter(s=>s.status==='finished');const start=new Date();start.setDate(start.getDate()-7);
@@ -264,6 +366,30 @@ async function action(name,el) {
  if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
  if(name==='close-workout'){await flushSave();state.session=null;state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
+ if(name==='history-view'){state.historyView=el.dataset.view==='calendar'?'calendar':'list';return render();}
+ if(name==='history-prev-month'||name==='history-next-month'){
+  const [year,month]=state.historyMonth.split('-').map(Number);
+  const direction=name==='history-prev-month'?-1:1;
+  const next=new Date(year,month-1+direction,1);
+  state.historyMonth=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0');
+  state.historyDate='';
+  return render();
+ }
+ if(name==='history-day'){state.historyDate=el.dataset.date;return render();}
+ if(name==='delete-workout'){
+  if(!s)return;
+  if(!confirm('Permanently delete "'+(s.name||'Workout')+'" from '+displayDate(s.date)+'? This cannot be undone without a backup.'))return;
+  await flushSave();
+  await saveQueue;
+  await remove('sessions',s.id);
+  state.session=null;
+  state.expanded.clear();
+  state.tab='history';
+  state.report=false;
+  await render();
+  toast('Workout deleted');
+  return;
+ }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
