@@ -9,7 +9,8 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const suggestions = ['Shoulder Press','Pec Fly','Lat Pulldown','Bent-Over Row','Dumbbell Lateral Raise','Biceps Curl','Triceps Pushdown','Squat','Leg Press','Romanian Deadlift','Plank'];
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null};
+const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:''};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -116,7 +117,14 @@ function renderWorkout() {
  <div class="card"><form data-form="add-exercise" class="stack"><div class="field"><label>Add any exercise</label><input name="exerciseName" list="exercise-suggestions" placeholder="e.g. Machine Lateral Raise" required autocomplete="off" enterkeyhint="done"></div><datalist id="exercise-suggestions">${[...new Set([...state.exercises.map(x=>x.name),...suggestions])].map(n=>`<option value="${e(n)}"></option>`).join('')}</datalist><button class="btn secondary wide" type="submit">＋ Add exercise</button></form></div>
  <div class="section-heading"><h2>Cardio and sauna</h2></div>${s.activities.map((x,i)=>renderActivity(x,i)).join('')}
  <div class="card"><div class="grid2">${button('＋ Cardio','add-cardio','secondary')}${button('＋ Sauna','add-sauna','secondary')}</div></div>
- <div class="card"><div class="stack">${button(s.status==='active'?'Finish workout':'Save changes','finish','wide')}${button('Close without finishing','close-workout','secondary wide')}</div><p class="helper">Changes save automatically on your device. You can edit this session later.</p></div>`;
+ <div class="card"><div class="stack">
+ ${button(s.status==='active'?'Finish workout':'Save changes','finish','wide')}
+ ${button('Close without finishing','close-workout','secondary wide')}
+ </div><p class="helper">Changes save automatically on your device. You can edit this session later.</p>
+ <div class="delete-workout-area">
+  ${button('Delete workout','delete-workout','danger wide')}
+  <p class="helper">Deleting removes this workout from your history and progress statistics.</p>
+ </div></div>`;
 }
 function renderExercise(x,i) {
  const isOpen=state.expanded.has(x.id);
@@ -264,6 +272,30 @@ async function action(name,el) {
  if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
  if(name==='close-workout'){await flushSave();state.session=null;state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
+ if(name==='history-view'){state.historyView=el.dataset.view==='calendar'?'calendar':'list';return render();}
+ if(name==='history-prev-month'||name==='history-next-month'){
+  const [year,month]=state.historyMonth.split('-').map(Number);
+  const direction=name==='history-prev-month'?-1:1;
+  const next=new Date(year,month-1+direction,1);
+  state.historyMonth=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0');
+  state.historyDate='';
+  return render();
+ }
+ if(name==='history-day'){state.historyDate=el.dataset.date;return render();}
+ if(name==='delete-workout'){
+  if(!s)return;
+  if(!confirm('Permanently delete "'+(s.name||'Workout')+'" from '+displayDate(s.date)+'? This cannot be undone without a backup.'))return;
+  await flushSave();
+  await saveQueue;
+  await remove('sessions',s.id);
+  state.session=null;
+  state.expanded.clear();
+  state.tab='history';
+  state.report=false;
+  await render();
+  toast('Workout deleted');
+  return;
+ }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
