@@ -95,3 +95,21 @@ test('Progress renders selected section only, with expandable history and compar
  assert.match(render(),/Progress Photos/);
  assert.doesNotMatch(render(),/Estimated 1RM/);
 });
+
+test('Progress exercise picker is searchable, accessible, and never creates exercises',()=>{
+ const sessions=[{id:'s1',status:'finished',date:'2026-11-11',name:'Workout',exercises:[{exerciseId:'a',sets:[{weight:'100',reps:'8'}]}]}];
+ const base={sessions,exercises:[{id:'a',name:'Cable lateral raise',muscle:'Shoulders'},{id:'b',name:'Seated cable row',muscle:'Back'}],
+  progressExercise:'a',progressSection:'exercises',progressRange:'all',progressWeight:'all',progressRepTarget:'5',
+  progressCompareType:'repsAtWeight',progressCompareOpen:false,progressTargetOpen:false,photos:[],photoView:'Front'};
+ const html=renderProgressView({state:base,e:esc,displayDate:x=>x,photoUrl:()=>''});
+ assert.match(html,/id="progress-exercise-search"/);
+ assert.match(html,/role="combobox"/);
+ assert.match(html,/aria-controls="progress-exercise-options"/);
+ assert.match(html,/value="Cable lateral raise"/);
+ assert.match(html,/id="progress-exercise-options"/);
+ assert.doesNotMatch(html,/id="progress-exercise" data-progress-control="exercise"/);
+ assert.doesNotMatch(html,/data-form="add-exercise"/);
+ assert.match(html,/Estimated strength/);
+ const empty=renderProgressView({state:{...base,exercises:[],sessions:[],progressExercise:''},e:esc,displayDate:x=>x,photoUrl:()=>''});
+ assert.match(empty,/id="progress-exercise-search"[^>]*disabled/);
+});
