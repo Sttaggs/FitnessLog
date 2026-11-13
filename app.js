@@ -488,8 +488,8 @@ function renderExercise(x,i) {
  <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="${e(historicalField(prev?.sets?.[j],'rpe','1–10'))}">
  <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>${renderAdvancedSetPanel(x,set,e,state.advancedOpen.has(x.id+':'+set.id))}`).join('')}
  ${prev?'<p class="helper historical-hint">Faded values show last time; only typed values are saved.</p>':''}
- <div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
- ${renderAdvancedTools(x,e)}
+ <div class="exercise-set-actions"><div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
+ ${renderAdvancedTools(x,e)}</div>
  ${renderExerciseMore(x,scope,type)}
  </div></details>`;
 }
