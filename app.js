@@ -2,7 +2,7 @@ import {list, get, put, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
-import {MUSCLE_GROUPS,muscleChoices,muscleLabel,exercisePrimaryMuscle,exerciseSecondaryMuscles} from './muscle-utils.js';
+import {muscleChoices,muscleLabel,exercisePrimaryMuscle,exerciseSecondaryMuscles} from './muscle-utils.js';
 import {restPreference,setRestPreference,readRestTimer,startRestTimer,pauseRestTimer,resumeRestTimer,resetRestTimer,adjustRestTimer,markRestAlerted,restTimeLabel} from './rest-timer.js';
 
 const $ = (s) => document.querySelector(s);
@@ -357,7 +357,7 @@ function renderExercise(x,i) {
  const scope='exercise:'+x.id;
  const type=x.technique||'Standard';
  return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
- <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(type)} · ${x.sets?.length||0} set rows</small></div><span class="muted">▾</span></div></summary>
+ <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(type)} · ${x.sets?.length||0} ${x.sets?.length===1?'set':'sets'}</small></div><span class="muted">▾</span></div></summary>
  <div class="detail-body">
  ${renderRestTimer(x)}
  ${prev?`<section class="previous-reference">
@@ -501,8 +501,8 @@ function renderLibrary() {
   const records=state.sessions.flatMap(s=>(s.exercises||[]).filter(x=>x.exerciseId===ex.id).map(x=>({session:s,entry:x})));
   return `<button class="btn secondary small" data-action="library-back">← All exercises</button>
   <div class="card" style="margin-top:12px"><h2>${e(ex.name)}</h2>
-  <p class="helper">${e(ex.muscle||'Muscle unspecified')} · ${e(ex.equipment||'Equipment unspecified')}</p>
-  <p>${records.length} recorded workout entries</p></div>
+  <p class="helper">${e(exercisePrimaryMuscle(ex)||'Muscle unspecified')} · ${e(ex.equipment||'Equipment unspecified')}</p>
+  <p>${records.length} recorded workout entries</p>${exerciseSecondaryMuscles(ex).length?`<p class="helper">Secondary muscles: ${e(exerciseSecondaryMuscles(ex).join(", "))}</p>`:""}</div>
   <div class="section-heading"><h2>Performance history</h2></div>
   ${records.length?records.map(({session,entry})=>`<div class="item">
    <div class="row between"><div class="grow"><strong>${displayDate(session.date)}</strong><p class="helper" style="margin:4px 0">${e(session.name)}</p>
@@ -516,7 +516,7 @@ function renderLibrary() {
  <button class="btn secondary wide" type="submit">Add to library</button></form></div>
  <div class="section-heading"><h2>Saved exercises</h2><span class="pill">${state.exercises.length}</span></div>
  ${state.exercises.length?state.exercises.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div class="item"><div class="row between">
- <div class="grow"><div class="item-title">${e(x.name)}</div><small>${e(x.muscle||'Unassigned')} · ${e(x.equipment||'No equipment')}</small></div>
+ <div class="grow"><div class="item-title">${e(x.name)}</div><small>${e(exercisePrimaryMuscle(x)||'Unassigned')} · ${e(x.equipment||'No equipment')}</small></div>
  <button class="btn small secondary" data-action="view-library" data-id="${x.id}">History</button></div></div>`).join(''):'<div class="card empty">Your exercises will appear here automatically as you log them.</div>'}`;
 }
 function renderSettings() {
