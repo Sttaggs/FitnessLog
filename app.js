@@ -756,14 +756,16 @@ async function restoreBackup(file) {
  const parsed=JSON.parse(await file.text());
  if(parsed.app!=='FitnessLog'||!Array.isArray(parsed.sessions)||!Array.isArray(parsed.exercises))throw Error('Unsupported backup format');
  if(parsed.photos!==undefined&&!Array.isArray(parsed.photos))throw Error('Invalid photo list');
+ if(parsed.templates!==undefined&&!Array.isArray(parsed.templates))throw Error('Invalid template list');
  const hasPhotoPayload=Array.isArray(parsed.photos);
  const question=hasPhotoPayload?
-  'Restore this backup? This will REPLACE all workouts, exercise library records, and saved progress photos on this device.':
-  'Restore this workout backup? This will REPLACE workouts and exercise library records. Your existing progress photos will be kept.';
+  'Restore this backup? This will REPLACE workouts, exercise library records, and photos, plus saved templates if the backup contains them.':
+  'Restore this workout backup? This will REPLACE workouts and exercise library records. Existing photos and templates absent from the backup will be kept.';
  if(!confirm(question))return;
  // Validate and decode every optional photo before starting the atomic DB transaction.
  const photos=hasPhotoPayload?await restorePhotos(parsed.photos):null;
  const stores={sessions:parsed.sessions,exercises:parsed.exercises.map(singleMuscleExercise)};
+ if(Array.isArray(parsed.templates))stores.templates=parsed.templates.map(sanitizedTemplate).filter(Boolean);
  if(photos!==null)stores.photos=photos;
  await replaceStores(stores);
  for(const url of photoUrls.values())URL.revokeObjectURL(url);
@@ -774,6 +776,7 @@ async function restoreBackup(file) {
  state.tab='home';
  state.libraryDetail=null;
  state.progressExercise='';
+ state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';
  await linkExistingExercises();
  await render();
  toast('Backup restored');
@@ -1045,13 +1048,13 @@ async function action(name,el) {
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
  if(name==='export-json'||name==='full-backup'){
   const full=name==='full-backup'||(!state.start&&!state.end);
-  download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises},null,2),'application/json');
+  download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:3,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises,...(full?{templates:state.templates}:{})},null,2),'application/json');
   return toast('Workout backup downloaded (photos excluded)');
  }
  if(name==='export-photos-backup'){
   const photos=await list('photos');
   if(!confirm('Include '+photos.length+' private progress photos in the downloaded JSON backup? This file may be large and contain sensitive photographs.'))return;
-  const payload={app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:state.sessions,exercises:state.exercises,photos:await photosForBackup(photos)};
+  const payload={app:'FitnessLog',version:3,createdAt:new Date().toISOString(),sessions:state.sessions,exercises:state.exercises,templates:state.templates,photos:await photosForBackup(photos)};
   download('fitnesslog-with-photos-'+today()+'.json',JSON.stringify(payload),'application/json');
   return toast('Photo-inclusive backup downloaded');
  }
@@ -1070,7 +1073,7 @@ function findScope(scope){
  if(kind==='set')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId);
 }
 document.addEventListener('click',async ev=>{
- const nav=ev.target.closest('[data-tab]');if(nav){await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.moreOpen.clear();state.libraryDetail=null;await render();return;}
+ const nav=ev.target.closest('[data-tab]');if(nav){if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.moreOpen.clear();state.libraryDetail=null;await render();return;}
  const el=ev.target.closest('[data-action]');if(!el)return;
  try{await action(el.dataset.action,el);}catch(error){console.error(error);toast('Unable to complete action');}
 });
@@ -1366,7 +1369,7 @@ document.addEventListener('submit',async ev=>{
   await render();toast(wasSaved?'Exercise already exists':'Exercise saved');
  }
 });
-$('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
+$('#settings-button').addEventListener('click',async()=>{if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
 (async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}try{await removeLegacySecondaryMuscles();}catch(error){console.warn('Exercise tag cleanup could not finish',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
 document.addEventListener('visibilitychange',refreshRestTimers);
