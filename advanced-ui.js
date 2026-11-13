@@ -25,7 +25,7 @@ export function renderAdvancedSetPanel(entry,set,e,isOpen=false){
  if(!isAdvancedSet(set))return '';
  const type=setTechnique(set),stages=Array.isArray(set.stages)?set.stages:[];
  const openKey=entry.id+':'+set.id;
- const details=stages.map((stage,j)=>'<div class="advanced-stage-row">'+
+ const details=stages.map((stage,j)=>'<div class="advanced-stage-row'+(type==='myo'?' myo':'')+'">'+
   '<span class="advanced-stage-label">'+(type==='myo'?'Mini '+(j+1):'Stage '+(j+2))+'</span>'+
   (type==='myo'?'':'<input type="number" min="0" step="any" inputmode="decimal" aria-label="Stage '+(j+2)+' weight in pounds" placeholder="lb" data-scope="stage:'+e(entry.id)+':'+e(set.id)+':'+e(stage.id)+'" data-field="weight" value="'+e(stage.weight??'')+'">')+
   '<input type="number" min="0" step="1" inputmode="numeric" aria-label="'+(type==='myo'?'Mini-set':'Stage')+' '+(j+1)+' repetitions" placeholder="Reps" data-scope="stage:'+e(entry.id)+':'+e(set.id)+':'+e(stage.id)+'" data-field="reps" value="'+e(stage.reps??'')+'">'+
