@@ -16,11 +16,11 @@ test('catalog has every supplied entry with only the exact duplicated exercise m
   'Hamstrings and Glutes','Core and Mobility','Cardio and Conditioning'
  ]);
 });
-test('close-grip bench press is one exercise with both relevant muscles',()=>{
+test('close-grip bench press is one exercise with a single muscle group',()=>{
  const matches=CATALOG_EXERCISES.filter(x=>x.name==='Close-grip bench press');
  assert.equal(matches.length,1);
  assert.equal(matches[0].muscle,'Chest');
- assert.deepEqual(matches[0].secondaryMuscles,['Triceps']);
+ assert.equal(Object.hasOwn(matches[0],'secondaryMuscles'),false);
 });
 test('cardio and mobility remain categories rather than counting as muscle sets',()=>{
  for(const name of ['Jogging','Sprinting','Disc golf','Kayaking','Walking','Rucking','Hiking']){
@@ -40,6 +40,7 @@ test('new installation makes all 105 unique records with stable fields',()=>{
  assert.equal(new Set(plan.toInsert.map(x=>x.id)).size,105);
  assert.ok(plan.toInsert.every(x=>x.origin==='starter-catalog'));
  assert.ok(plan.toInsert.every(x=>x.createdAt==='2026-11-13T00:00:00Z'));
+ assert.ok(plan.toInsert.every(x=>!Object.hasOwn(x,'secondaryMuscles')));
 });
 test('existing workouts remain linked because the old permanent library ID is retained',()=>{
  const prior={
@@ -55,11 +56,12 @@ test('existing workouts remain linked because the old permanent library ID is re
  assert.equal(same.muscle,'Triceps');
  assert.equal(same.category,'Chest');
  assert.equal(same.equipment,'Selectorized');
- assert.deepEqual(same.secondaryMuscles,['Shoulders']);
+ assert.equal(Object.hasOwn(same,'secondaryMuscles'),false);
  assert.deepEqual(same.progressTarget,prior.progressTarget);
  assert.equal(prior.category,''); // no in-place mutation of existing data
+ assert.deepEqual(prior.secondaryMuscles,['Shoulders']);
 });
-test('missing tags are filled without overwriting other user preferences',()=>{
+test('missing muscle groups are filled without overwriting other user preferences',()=>{
  const prior={id:'x',name:'Cable lateral raise',muscle:'',notes:'user notes',progressTarget:{sets:4}};
  const plan=planCatalogInstall([prior],()=>crypto.randomUUID(),'2026-11-13');
  assert.equal(plan.toInsert.length,104);
