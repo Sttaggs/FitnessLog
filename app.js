@@ -97,6 +97,43 @@ function closeExerciseSuggestions(){
  if(list){list.hidden=true;list.innerHTML='';}
  if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}
 }
+// Progress uses the exact same match ranking as Add Exercise, but only
+// selects existing exercise IDs: searching here never creates new exercises.
+function renderProgressExerciseSuggestions(input,highlight=-1){
+ const list=document.getElementById('progress-exercise-options');
+ if(!list)return;
+ const query=input.value.trim();
+ const matches=exerciseMatches(query).slice(0,8);
+ if(!query){closeProgressExerciseSuggestions(false);return;}
+ const viewport=window.visualViewport;
+ const bottom=(viewport?.offsetTop??0)+(viewport?.height??window.innerHeight);
+ const rect=input.getBoundingClientRect();
+ const below=bottom-rect.bottom;
+ const above=rect.top-(viewport?.offsetTop??0);
+ const placeAbove=below<180&&above>below;
+ list.classList.toggle('above',placeAbove);
+ list.style.maxHeight=Math.min(300,Math.max(110,(placeAbove?above:below)-16))+'px';
+ list.hidden=false;
+ list.innerHTML=matches.length?matches.map((match,index)=>
+  '<button type="button" role="option" id="progress-option-'+index+'" class="exercise-search-option'+(index===highlight?' highlighted':'')+'" aria-selected="'+(index===highlight)+'" data-action="select-progress-exercise" data-id="'+e(match.exercise.id)+'"><span>'+e(match.exercise.name)+'</span><small>'+(match.similar?'Similar spelling — check name':'Saved exercise')+'</small></button>'
+ ).join(''):'<div class="exercise-search-empty">No saved exercise matches. Add new exercises during a workout.</div>';
+ list.dataset.highlight=String(highlight);
+ input.setAttribute('aria-expanded',String(matches.length>0));
+ if(highlight>=0&&highlight<matches.length)input.setAttribute('aria-activedescendant','progress-option-'+highlight);
+ else input.removeAttribute('aria-activedescendant');
+}
+function closeProgressExerciseSuggestions(restoreSelected=true){
+ const input=document.getElementById('progress-exercise-search');
+ const list=document.getElementById('progress-exercise-options');
+ if(list){list.hidden=true;list.innerHTML='';}
+ if(input){
+  input.setAttribute('aria-expanded','false');
+  input.removeAttribute('aria-activedescendant');
+  // Restore the exercise whose analytics were displayed, even when
+  // the latest trained exercise was auto-selected rather than stored in state.
+  if(restoreSelected)input.value=input.defaultValue;
+ }
+}
 async function resolveExerciseInput(name){
  const matches=exerciseMatches(name);
  const exact=matches.find(match=>normalizeName(match.exercise.name)===normalizeName(name));
@@ -732,6 +769,15 @@ async function action(name,el) {
   toast('Workout deleted');
   return;
  }
+ if(name==='select-progress-exercise'){
+  const selected=state.exercises.find(ex=>ex.id===el.dataset.id);
+  if(selected){
+   state.progressExercise=selected.id;
+   state.progressWeight='all';
+   await render();
+  }
+  return;
+ }
  if(name==='select-exercise'){
   const master=state.exercises.find(x=>x.id===el.dataset.id);
   if(master)await addExerciseToWorkout(master);
@@ -845,6 +891,7 @@ function validateEntry(input,value,showError=false) {
 
 document.addEventListener('input',ev=>{
  if(ev.target.id==='exercise-entry-name')renderExerciseSuggestions(ev.target);
+ if(ev.target.id==='progress-exercise-search')renderProgressExerciseSuggestions(ev.target);
  if(ev.target.id==='library-filter'){
   const query=normalizeName(ev.target.value);
   let count=0;
@@ -866,6 +913,10 @@ document.addEventListener('input',ev=>{
 });
 document.addEventListener('focusin',ev=>{
  if(ev.target.id==='exercise-entry-name'&&ev.target.value.trim())renderExerciseSuggestions(ev.target);
+ if(ev.target.id==='progress-exercise-search'){
+  ev.target.select();
+  if(ev.target.value.trim())renderProgressExerciseSuggestions(ev.target);
+ }
 });
 document.addEventListener('keydown',ev=>{
  if(ev.target.id!=='exercise-entry-name')return;
@@ -883,8 +934,26 @@ document.addEventListener('keydown',ev=>{
   options[current].click();
  }
 });
+document.addEventListener('keydown',ev=>{
+ if(ev.target.id!=='progress-exercise-search')return;
+ const list=document.getElementById('progress-exercise-options');
+ const options=Array.from(list?.querySelectorAll('[data-action="select-progress-exercise"]')||[]);
+ const current=Number(list?.dataset.highlight??-1);
+ if((ev.key==='ArrowDown'||ev.key==='ArrowUp')&&options.length){
+  ev.preventDefault();
+  const next=ev.key==='ArrowDown'?(current+1)%options.length:(current<=0?options.length-1:current-1);
+  renderProgressExerciseSuggestions(ev.target,next);
+ }else if(ev.key==='Escape'){
+  ev.preventDefault();
+  closeProgressExerciseSuggestions();
+ }else if(ev.key==='Enter'&&!list?.hidden){
+  ev.preventDefault();
+  if(options.length)options[current>=0&&current<options.length?current:0].click();
+ }
+});
 document.addEventListener('click',ev=>{
  if(!ev.target.closest('.exercise-search-field'))closeExerciseSuggestions();
+ if(!ev.target.closest('.progress-exercise-search-field'))closeProgressExerciseSuggestions();
 });
 document.addEventListener('input',ev=>{
  if(ev.target.id==='photo-overlay-range'){
@@ -979,8 +1048,7 @@ document.addEventListener('change',async ev=>{
  const progress=ev.target.dataset?.progressControl;
  if(progress){
   const value=ev.target.value;
-  if(progress==='exercise'){state.progressExercise=value;state.progressWeight='all';}
-  else if(progress==='range'&&['30','90','365','all'].includes(value))state.progressRange=value;
+  if(progress==='range'&&['30','90','365','all'].includes(value))state.progressRange=value;
   else if(progress==='weightFilter')state.progressWeight=value;
    else if(progress==='compareType'&&['repsAtWeight','weightAtReps'].includes(value))state.progressCompareType=value;
    else if(progress==='repTarget'&&Number.isInteger(Number(value))&&Number(value)>=1&&Number(value)<=30)state.progressRepTarget=value;
