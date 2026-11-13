@@ -129,12 +129,9 @@ function closeProgressExerciseSuggestions(restoreSelected=true){
  if(input){
   input.setAttribute('aria-expanded','false');
   input.removeAttribute('aria-activedescendant');
-  if(restoreSelected){
-   const selected=state.exercises.find(ex=>ex.id===state.progressExercise);
-   if(selected)input.value=selected.name;
-   else if(state.exercises.length)input.value=state.exercises[0].name;
-   else input.value='';
-  }
+  // Restore the exercise whose analytics were displayed, even when
+  // the latest trained exercise was auto-selected rather than stored in state.
+  if(restoreSelected)input.value=input.defaultValue;
  }
 }
 async function resolveExerciseInput(name){
@@ -1051,8 +1048,7 @@ document.addEventListener('change',async ev=>{
  const progress=ev.target.dataset?.progressControl;
  if(progress){
   const value=ev.target.value;
-  if(progress==='exercise'){state.progressExercise=value;state.progressWeight='all';}
-  else if(progress==='range'&&['30','90','365','all'].includes(value))state.progressRange=value;
+  if(progress==='range'&&['30','90','365','all'].includes(value))state.progressRange=value;
   else if(progress==='weightFilter')state.progressWeight=value;
    else if(progress==='compareType'&&['repsAtWeight','weightAtReps'].includes(value))state.progressCompareType=value;
    else if(progress==='repTarget'&&Number.isInteger(Number(value))&&Number(value)>=1&&Number(value)<=30)state.progressRepTarget=value;
