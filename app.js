@@ -2,6 +2,9 @@ import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {ADVANCED_TYPES,isAdvancedSet,setTechnique,techniqueLabel,newAdvancedSet,setTechniqueOnExisting,hasRecordedStages,MAX_STAGES,linkSuperset,removeSuperset,cleanSupersets,normalizeSetPlan,templatePlanForSet} from './advanced-utils.js';
+import {renderAdvancedSetPanel,renderAdvancedTools,renderSupersetSettings,supersetLabel} from './advanced-ui.js';
+import {renderTemplateExerciseRow} from './template-advanced-ui.js';
 import {templateFromWorkout,templateToEntries,sanitizedTemplate,validSetCount,cleanTemplateName,templateSummary,MAX_TEMPLATE_EXERCISES} from './template-utils.js';
 import {CATALOG_CATEGORIES,planCatalogInstall} from './exercise-catalog.js';
 import {muscleChoices,muscleLabel,exercisePrimaryMuscle,singleMuscleExercise} from './muscle-utils.js';
@@ -16,7 +19,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -191,7 +194,7 @@ async function addExerciseToWorkout(master){
  document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});
 }
 const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
-const hasSetData = set => Boolean(set && ['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined));
+const hasSetData = set => Boolean(set && (['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined) || (set.stages||[]).some(stage=>['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined))));
 const recordedSets = x => (x.sets||[]).filter(hasSetData);
 async function ensureExercise(name) {
  const clean=String(name||'').trim().replace(/\s+/g,' ');
@@ -453,6 +456,7 @@ function renderExerciseMore(x,scope,type){
     '<label class="exercise-warmup-row"><input type="checkbox" data-warmup-entry="'+e(x.id)+'" data-warmup-set="'+e(set.id)+'" '+(set.warmup===true?'checked':'')+'>'+
     '<span>Set '+(j+1)+' · '+e(set.weight||'—')+' lb × '+e(set.reps||'—')+' reps</span></label>').join('')+
    '</div><p class="helper">Marked warm-ups are excluded from strength estimates and target checks.</p></details>'+
+  renderSupersetSettings(x,state.session?.exercises,e)+
   memoField('Exercise notes',scope,'notes',x.notes||'')+
   '<div class="exercise-remove-row"><button type="button" class="btn danger small" data-action="delete-exercise" data-id="'+e(x.id)+'">Remove exercise</button></div>'+
   '</div></details>';
@@ -463,7 +467,7 @@ function renderExercise(x,i) {
  const scope='exercise:'+x.id;
  const type=x.technique||'Standard';
  return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
- <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(type)} · ${x.sets?.length||0} ${x.sets?.length===1?'set':'sets'}</small></div><span class="muted">▾</span></div></summary>
+ <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(supersetLabel(x,state.session?.exercises)?supersetLabel(x,state.session?.exercises)+' · ':'')}${e(type)} · ${x.sets?.length||0} ${x.sets?.length===1?'set':'sets'}</small></div><span class="muted">▾</span></div></summary>
  <div class="detail-body">
  ${renderRestTimer(x)}
  ${prev?`<section class="previous-reference">
@@ -482,9 +486,10 @@ function renderExercise(x,i) {
  <input aria-label="Set ${j+1} weight in pounds" inputmode="decimal" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="${e(historicalField(prev?.sets?.[j],'weight','lb'))}">
  <input aria-label="Set ${j+1} repetitions" inputmode="numeric" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="${e(historicalField(prev?.sets?.[j],'reps','—'))}">
  <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="${e(historicalField(prev?.sets?.[j],'rpe','1–10'))}">
- <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>`).join('')}
+ <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>${renderAdvancedSetPanel(x,set,e,state.advancedOpen.has(x.id+':'+set.id))}`).join('')}
  ${prev?'<p class="helper historical-hint">Faded values show last time; only typed values are saved.</p>':''}
- <div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
+ <div class="exercise-set-actions"><div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
+ ${renderAdvancedTools(x,e)}</div>
  ${renderExerciseMore(x,scope,type)}
  </div></details>`;
 }
@@ -619,12 +624,7 @@ function renderTemplateEditor(){
  if(!template)return '<div class="card">No template is open.</div>';
  const count=template.exercises?.length||0;
  const exerciseRows=(template.exercises||[]).map((entry,index)=>
-  '<div class="item template-editor-row"><div class="template-editor-row-head"><strong>'+e(entry.name)+'</strong>'+
-   '<button type="button" class="btn ghost small" data-action="template-remove-exercise" data-index="'+index+'" aria-label="Remove '+e(entry.name)+'">Remove</button></div>'+
-   '<div class="template-editor-row-bottom"><label>Sets<input type="number" inputmode="numeric" min="1" max="20" step="1" data-template-sets="'+index+'" value="'+e(entry.sets)+'" aria-label="Number of sets for '+e(entry.name)+'"></label>'+
-   '<div class="template-order-buttons"><button type="button" class="btn secondary small" data-action="template-move-up" data-index="'+index+'" aria-label="Move '+e(entry.name)+' earlier" '+(index===0?'disabled':'')+'>↑</button>'+
-   '<button type="button" class="btn secondary small" data-action="template-move-down" data-index="'+index+'" aria-label="Move '+e(entry.name)+' later" '+(index===count-1?'disabled':'')+'>↓</button></div></div></div>'
- ).join('');
+  renderTemplateExerciseRow(entry,index,template,e,state.templateAdvancedOpen.has(index))).join('');
  const search='<form data-form="template-add-exercise" class="template-add-exercise"><div class="field exercise-search-field template-search-field">'+
   '<label for="template-exercise-name">Add an exercise</label>'+
   '<input id="template-exercise-name" name="exerciseName" placeholder="Search or type a new exercise" required autocomplete="off" spellcheck="false" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="template-search-options" aria-expanded="false">'+
@@ -633,7 +633,7 @@ function renderTemplateEditor(){
  return '<button type="button" class="btn ghost small" data-action="templates-back">← Templates</button>'+
   '<div class="card template-editor-heading"><h2>'+e(template.createdAt&&state.templates.some(x=>x.id===template.id)?'Edit template':'New template')+'</h2>'+
    '<label class="field" for="template-name">Template name<input id="template-name" type="text" maxlength="100" value="'+e(template.name)+'" placeholder="e.g. Push day"></label>'+
-   '<p class="helper">Only exercise order and set counts are saved. Creating a template does not log a workout.</p></div>'+
+   '<p class="helper">Exercise order, set counts, optional techniques and superset links are saved. No workout is logged.</p></div>'+
   '<div class="section-heading"><h2>Exercises</h2><span class="pill">'+count+'</span></div>'+
   (exerciseRows||'<div class="card empty">No exercises yet. Add one below.</div>')+
   (count<MAX_TEMPLATE_EXERCISES?'<div class="card">'+search+'</div>':'<p class="helper">Template exercise limit reached.</p>')+
@@ -708,18 +708,26 @@ function renderSettings() {
  <input id="restore-file" type="file" accept="application/json,.json" hidden>
  </div>
  <p class="helper">Photo-inclusive backup is optional and may be large. Photo files are included only when you explicitly choose the photo-inclusive option. Restoring a workout-only backup preserves existing photos on this device.</p></div>
- <div class="card"><h2>About</h2><p class="muted">Exercise analytics track recorded weight, repetitions, and RPE. Progress photos are private, dated, and comparable by view. Advanced training techniques and body measurements remain planned.</p></div>`;
+ <div class="card"><h2>About</h2><p class="muted">Exercise analytics track standard weight, repetitions, and RPE; advanced stages are recorded separately and saved in backups. Progress photos remain private. Body measurements remain planned.</p></div>`;
 }
 function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderReport() {
  const ss=selected();
- const setDescription = set=>[
+ const setValues=set=>[
   set.weight!==''&&set.weight!=null?set.weight+' lb':'',
   set.reps!==''&&set.reps!=null?set.reps+' reps':'',
   set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:''
  ].filter(Boolean).join(' · ');
+ const setDescription=set=>{
+  const base=setValues(set);
+  if(!isAdvancedSet(set))return base;
+  const type=setTechnique(set);
+  const stages=(set.stages||[]).map((stage,index)=>
+   (type==='myo'?'Mini '+(index+1):'Stage '+(index+2))+': '+(setValues(stage)||'not recorded')).join(' / ');
+  return techniqueLabel(set)+': '+(base||'not recorded')+(stages?' / '+stages:'');
+ };
  return `<div class="no-print row between" style="margin-bottom:12px">
  ${button('← History','report-close','secondary small')}${button('Print / Save PDF','print','small')}</div>
  <div class="report print-area">
@@ -730,7 +738,7 @@ function renderReport() {
  <p>${e(s.notes||'')}</p>
  <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RPE)</th></tr></thead><tbody>
  ${(s.exercises||[]).map(x=>`<tr><td>${e(x.name)}${x.notes?' — '+e(x.notes):''}</td>
- <td>${e(x.technique||'Standard')}</td>
+ <td>${e(x.technique||'Standard')}${supersetLabel(x,s.exercises)?' · '+e(supersetLabel(x,s.exercises)):''}</td>
  <td>${recordedSets(x).map(set=>e(setDescription(set))).join('; ')||'No set data recorded'}</td>
  </tr>`).join('')}
  </tbody></table>
@@ -740,14 +748,21 @@ function renderReport() {
 function download(name, body, mime) {const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function csvValue(x) {return '"'+String(x??'').replace(/"/g,'""')+'"';}
 function exportCsv() {
- const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes']];
+ const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes','set_method','stage','superset']];
  for(const s of selected()) {
   for(const x of s.exercises||[]) {
    const sets=recordedSets(x);
-   if(sets.length) sets.forEach((set,i)=>rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes]));
-   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes]);
+   if(sets.length)sets.forEach((set,i)=>{
+    const method=isAdvancedSet(set)?techniqueLabel(set):'Standard';
+    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes,method,'Main',supersetLabel(x,s.exercises)]);
+    if(isAdvancedSet(set))for(const [j,stage] of (set.stages||[]).entries()){
+     const level=setTechnique(set)==='myo'?'Mini '+(j+1):'Stage '+(j+2);
+     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',stage.rpe||'',s.intensity,s.fatigue,x.notes,method,level,supersetLabel(x,s.exercises)]);
+    }
+   });
+   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','',supersetLabel(x,s.exercises)]);
   }
-  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes]);
+  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes,'','','']);
  }
  download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
@@ -825,13 +840,13 @@ async function action(name,el) {
  if(name==='new-template'){
   const now=new Date().toISOString();
   state.templateDraft={id:newId(),name:'New template',createdAt:now,updatedAt:now,exercises:[]};
-  state.templateDirty=false;state.tab='template-editor';return render();
+  state.templateDirty=false;state.templateAdvancedOpen.clear();state.tab='template-editor';return render();
  }
  if(name==='edit-template'){
   const source=state.templates.find(x=>x.id===el.dataset.id);
   if(!source)return;
   state.templateDraft=sanitizedTemplate(source);
-  state.templateDirty=false;state.tab='template-editor';return render();
+  state.templateDirty=false;state.templateAdvancedOpen.clear();state.tab='template-editor';return render();
  }
  if(name==='templates-back'){
   if(state.templateDirty&&!confirm('Discard unsaved template changes?'))return;
@@ -846,7 +861,8 @@ async function action(name,el) {
   if(!state.templateDraft)return;
   const index=Number(el.dataset.index);
   if(index>=0&&index<state.templateDraft.exercises.length){
-   state.templateDraft.exercises.splice(index,1);state.templateDirty=true;await render();
+   removeSuperset(state.templateDraft.exercises,index);
+   state.templateDraft.exercises.splice(index,1);state.templateAdvancedOpen.clear();state.templateDirty=true;await render();
   }
   return;
  }
@@ -856,7 +872,7 @@ async function action(name,el) {
   const source=Number(el.dataset.index),dest=source+(name==='template-move-up'?-1:1);
   if(source>=0&&source<entries.length&&dest>=0&&dest<entries.length){
    [entries[source],entries[dest]]=[entries[dest],entries[source]];
-   state.templateDirty=true;await render();
+   state.templateAdvancedOpen.clear();state.templateDirty=true;await render();
   }
   return;
  }
@@ -1037,6 +1053,69 @@ async function action(name,el) {
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){const wasActive=s.status==='active';s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='add-advanced-set'){
+  const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
+  const type=el.dataset.type;
+  if(!entry||!ADVANCED_TYPES.includes(type))return;
+  const added=newAdvancedSet(type,newId);
+  entry.sets.push(added);
+  state.expanded.add(entry.id);
+  state.advancedOpen.add(entry.id+':'+added.id);
+  await saveSession();await render();
+  return;
+ }
+ if(name==='convert-set'){
+  const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
+  if(!entry)return;
+  const setId=main.querySelector('[data-convert-set="'+entry.id+'"]')?.value;
+  const type=main.querySelector('[data-convert-type="'+entry.id+'"]')?.value;
+  const chosen=entry.sets.find(x=>x.id===setId);
+  if(!chosen||!['standard',...ADVANCED_TYPES].includes(type))return;
+  if(setTechnique(chosen)===type){toast('Set already uses this type');return;}
+  if(hasRecordedStages(chosen)&&!confirm('Changing the set type removes its recorded extra stages. Continue?'))return;
+  setTechniqueOnExisting(chosen,type,newId);
+  if(type!=='standard')state.advancedOpen.add(entry.id+':'+chosen.id);
+  else state.advancedOpen.delete(entry.id+':'+chosen.id);
+  await saveSession();await render();
+  return;
+ }
+ if(name==='add-stage'||name==='remove-stage'){
+  const entry=s?.exercises?.find(x=>x.id===el.dataset.exercise);
+  const chosen=entry?.sets?.find(set=>set.id===el.dataset.set);
+  if(!chosen||!isAdvancedSet(chosen))return;
+  chosen.stages=Array.isArray(chosen.stages)?chosen.stages:[];
+  if(name==='add-stage'){
+   if(chosen.stages.length>=MAX_STAGES){toast('Stage limit reached');return;}
+   chosen.stages.push({id:newId(),weight:'',reps:'',rpe:''});
+  }else{
+   const stage=chosen.stages.find(stage=>stage.id===el.dataset.stage);
+   if(!stage)return;
+   if(['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined)&&
+      !confirm('Remove this recorded stage?'))return;
+   chosen.stages=chosen.stages.filter(stage=>stage.id!==el.dataset.stage);
+  }
+  state.advancedOpen.add(entry.id+':'+chosen.id);
+  await saveSession();await render();
+  return;
+ }
+ if(name==='link-superset'){
+  const first=s?.exercises?.findIndex(x=>x.id===el.dataset.id);
+  const partner=main.querySelector('[data-superset-partner="'+el.dataset.id+'"]')?.value;
+  const second=s?.exercises?.findIndex(x=>x.id===partner);
+  if(first===undefined||first<0||second===undefined||second<0){toast('Select an exercise to link');return;}
+  if((s.exercises[first].supersetId||s.exercises[second].supersetId)&&
+     !confirm('Replace any existing superset links for these exercises?'))return;
+  linkSuperset(s.exercises,first,second,newId);
+  await saveSession();await render();toast('Superset linked');
+  return;
+ }
+ if(name==='unlink-superset'){
+  const index=s?.exercises?.findIndex(x=>x.id===el.dataset.id);
+  if(index===undefined||index<0)return;
+  removeSuperset(s.exercises,index);
+  await saveSession();await render();toast('Superset unlinked');
+  return;
+ }
  if(name==='add-set'){
   const x=s.exercises.find(x=>x.id===el.dataset.id);
   // The new set starts with no recorded measurements. Its weight, reps and
@@ -1049,8 +1128,8 @@ async function action(name,el) {
   document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();
   return;
  }
- if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
- if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.moreOpen.delete(el.dataset.id);state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
+ if(name==='delete-set'){const x=s?.exercises?.find(x=>x.id===el.dataset.exercise);if(!x)return;state.advancedOpen.delete(x.id+':'+el.dataset.id);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
+ if(name==='delete-exercise'){if(!s||!confirm('Remove exercise?'))return;const index=s.exercises.findIndex(x=>x.id===el.dataset.id);if(index<0)return;removeSuperset(s.exercises,index);state.moreOpen.delete(el.dataset.id);state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
  if(name==='delete-activity'){s.activities=s.activities.filter(a=>a.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
@@ -1079,6 +1158,7 @@ function findScope(scope){
  if(kind==='exercise')return state.session.exercises.find(x=>x.id===id);
  if(kind==='activity')return state.session.activities.find(x=>x.id===id);
  if(kind==='set')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId);
+ if(kind==='stage')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId)?.stages?.find(x=>x.id===scope.split(':')[3]);
 }
 document.addEventListener('click',async ev=>{
  const nav=ev.target.closest('[data-tab]');if(nav){if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.moreOpen.clear();state.libraryDetail=null;await render();return;}
@@ -1214,6 +1294,17 @@ document.addEventListener('toggle',ev=>{
   if(wasOpen&&!card.open&&state.tab==='progress'&&!state.session)render().catch(console.error);
   return;
  }
+ if(card.matches?.('[data-template-advanced]')){
+  const index=Number(card.dataset.templateAdvanced);
+  if(card.open)state.templateAdvancedOpen.add(index);
+  else state.templateAdvancedOpen.delete(index);
+  return;
+ }
+ if(card.matches?.('[data-advanced-set]')){
+  if(card.open)state.advancedOpen.add(card.dataset.advancedSet);
+  else state.advancedOpen.delete(card.dataset.advancedSet);
+  return;
+ }
  if(card.matches?.('[data-exercise-more]')){
   if(card.open)state.moreOpen.add(card.dataset.exerciseMore);
   else state.moreOpen.delete(card.dataset.exerciseMore);
@@ -1224,6 +1315,36 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(state.templateDraft&&ev.target.dataset?.templateTechnique!==undefined){
+  const index=Number(ev.target.dataset.templateTechnique),setIndex=Number(ev.target.dataset.setIndex);
+  const entry=state.templateDraft.exercises[index],type=ev.target.value;
+  if(!entry||!['standard',...ADVANCED_TYPES].includes(type)||setIndex<0||setIndex>=entry.sets)return;
+  const plans=Array.from({length:entry.sets},(_,j)=>normalizeSetPlan(entry.setPlans?.[j]));
+  plans[setIndex]={technique:type,stages:type==='standard'?0:2};
+  entry.setPlans=plans;state.templateDirty=true;state.templateAdvancedOpen.add(index);
+  await render();return;
+ }
+ if(state.templateDraft&&ev.target.dataset?.templateStageCount!==undefined){
+  const index=Number(ev.target.dataset.templateStageCount),setIndex=Number(ev.target.dataset.setIndex);
+  const entry=state.templateDraft.exercises[index],value=Number(ev.target.value);
+  if(!entry||setIndex<0||setIndex>=entry.sets)return;
+  if(!Number.isInteger(value)||value<1||value>MAX_STAGES){
+   toast('Extra stages must be between 1 and 12');
+   ev.target.value=normalizeSetPlan(entry.setPlans?.[setIndex]).stages||2;return;
+  }
+  const plans=Array.from({length:entry.sets},(_,j)=>normalizeSetPlan(entry.setPlans?.[j]));
+  plans[setIndex].stages=value;
+  entry.setPlans=plans;state.templateDirty=true;return;
+ }
+ if(state.templateDraft&&ev.target.dataset?.templatePartner!==undefined){
+  const entries=state.templateDraft.exercises,index=Number(ev.target.dataset.templatePartner);
+  if(index<0||index>=entries.length)return;
+  const partner=ev.target.value;
+  if(partner==='')removeSuperset(entries,index);
+  else if(!linkSuperset(entries,index,Number(partner),newId))return;
+  state.templateDirty=true;state.templateAdvancedOpen.add(index);
+  await render();return;
+ }
  if(ev.target.dataset?.templateSets!==undefined&&state.templateDraft){
   const index=Number(ev.target.dataset.templateSets),count=validSetCount(ev.target.value);
   if(!state.templateDraft.exercises[index])return;
@@ -1231,8 +1352,13 @@ document.addEventListener('change',async ev=>{
    toast('Enter a whole number from 1 to 20');
    ev.target.value=state.templateDraft.exercises[index].sets;
   }else{
-   state.templateDraft.exercises[index].sets=count;
-   state.templateDirty=true;
+   const entry=state.templateDraft.exercises[index];
+   entry.sets=count;
+   if(Array.isArray(entry.setPlans)){
+    entry.setPlans=Array.from({length:count},(_,j)=>normalizeSetPlan(entry.setPlans[j]));
+   }
+   state.templateDirty=true;state.templateAdvancedOpen.add(index);
+   await render();
   }
   return;
  }

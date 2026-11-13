@@ -1,4 +1,6 @@
 // Each saved exercise has one primary muscle for weekly set attribution.
+// Advanced sequences count as one parent set regardless of extra stages.
+import {isAdvancedSet} from './advanced-utils.js';
 // Historical secondary tag arrays are obsolete and are removed during migration.
 export const MUSCLE_GROUPS=[
  'Chest','Back','Shoulders','Biceps','Triceps','Quadriceps','Hamstrings',
@@ -45,9 +47,10 @@ export function weekStart(date){
 }
 const validReps=set=>{
  if(set?.warmup===true)return false;
- if(set?.reps===''||set?.reps===null||set?.reps===undefined)return false;
- const value=Number(set.reps);
- return Number.isFinite(value)&&value>0;
+ const reps=Number(set?.reps);
+ if(set?.reps!==''&&set?.reps!==null&&set?.reps!==undefined&&Number.isFinite(reps)&&reps>0)return true;
+ return isAdvancedSet(set)&&(set.stages||[]).some(stage=>
+  stage.reps!==''&&stage.reps!==null&&stage.reps!==undefined&&Number(stage.reps)>0);
 };
 export function muscleSetSummary(sessions,exercises,referenceDate=new Date()){
  const byId=new Map((exercises||[]).map(exercise=>[exercise.id,exercise]));

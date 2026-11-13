@@ -1,5 +1,6 @@
 import {trendSvg,numericValue} from './analytics.js';
 import {muscleSetSummary} from './muscle-utils.js';
+import {isAdvancedSet,techniqueLabel} from './advanced-utils.js';
 import {strengthSessions,strengthChartPoints,progressionTrend,availableWeights,comparisonPoints,latestWorkingPerformance,comparableEffort,normalizedTarget,nextSessionAdvice} from './progression.js';
 
 const hasData=set => Boolean(set && ['weight','reps','rpe'].some(key=>set[key]!==''&&set[key]!==undefined&&set[key]!==null));
@@ -93,7 +94,7 @@ function renderExerciseProgress({state,e,displayDate}){
    '<div class="empty">No eligible estimates in this period.</div>')+'</div>'+
   '<p class="helper">'+e(strengthNote)+'</p>'+
   '<details class="progress-method"><summary>How the trend is calculated</summary>'+
-   '<p class="helper">Estimated 1RM uses the Epley equation with recorded weight and 1–10 reps. Warm-ups are excluded when marked. The status compares the median estimates of the latest three measured sessions with the prior three; a change greater than 3% is highlighted as improvement or possible regression. This is a practical display threshold, not a diagnostic cutoff. RPE is shown separately and does not alter the estimate. Far-from-failure sets may underestimate capacity.</p></details></section>';
+   '<p class="helper">Estimated 1RM uses the Epley equation with recorded weight and 1–10 reps. Warm-ups are excluded when marked. The status compares the median estimates of the latest three measured sessions with the prior three; a change greater than 3% is highlighted as improvement or possible regression. This is a practical display threshold, not a diagnostic cutoff. RPE is shown separately and does not alter the estimate. Drop sets, Myo-reps and ladders are excluded from estimated-strength calculations; supersets retain independent standard sets. Far-from-failure sets may underestimate capacity.</p></details></section>';
  const effort=rpeComparison?
   '<p class="helper">At '+e(numberLabel(rpeComparison.weight,2))+' lb × '+e(rpeComparison.reps)+
   ' reps, recorded RPE changed from '+e(rpeComparison.previous)+' to '+e(rpeComparison.current)+'. RPE provides context; it does not change estimated strength.</p>':'';
@@ -103,12 +104,12 @@ function renderExerciseProgress({state,e,displayDate}){
    '<details class="progress-session"><summary><span>'+e(displayDate(record.date))+' · '+e(record.sessionName)+'</span>'+
    '<span class="progress-session-count">'+record.sets.filter(hasData).length+' logged sets</span></summary>'+
    '<div class="progress-session-body"><div class="progress-session-table"><div class="progress-session-head"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>'+
-   record.sets.map((set,index)=>'<div class="progress-session-row"><span>'+(index+1)+(set.warmup===true?' W':'')+
+   record.sets.map((set,index)=>'<div class="progress-session-row"><span>'+(index+1)+(set.warmup===true?' W':'')+(isAdvancedSet(set)?' '+techniqueLabel(set):'')+
      '</span><span>'+e(formatNumber(set.weight===''?null:set.weight))+'</span><span>'+
      e(formatNumber(set.reps===''?null:set.reps))+'</span><span>'+e(formatNumber(set.rpe===''?null:set.rpe))+'</span></div>').join('')+'</div>'+
    (record.notes?'<p class="helper">Notes: '+e(record.notes)+'</p>':'')+
    '<button class="btn secondary small" data-action="open" data-id="'+e(record.sessionId)+'">Edit workout</button></div></details>'
-  ).join('')+'</div><p class="helper">Showing up to 20 recent completed sessions. W = warm-up. Empty measurements stay blank.</p>':
+  ).join('')+'</div><p class="helper">Showing up to 20 recent completed sessions. W = warm-up. Advanced stage details are in the saved workout.</p>':
   '<p class="helper">No completed workouts recorded for this exercise.</p>')+
   '</details>';
  return summary+chart+(effort?'<div class="progress-effort-note">'+effort+'</div>':'')+more;
@@ -156,7 +157,7 @@ function renderWeeklyMuscleSets({state,e,inline=false}) {
   rows.map(row=>'<div class="muscle-week-row"><span>'+e(row.muscle)+'</span><strong>'+row.current+'</strong><span>'+row.previous+'</span></div>').join('')+'</div>':
   '<p class="helper">No sets with recorded repetitions were assigned to muscle groups in either week.</p>';
  return (inline?'<section class="card muscle-week-overview"><h2>Weekly muscle sets</h2>':'<details class="card muscle-week-overview"><summary>Weekly muscle sets <span class="helper">Optional</span></summary>')+
-  '<p class="helper">Weekly totals use Monday–Sunday calendar weeks. Each set with recorded repetitions greater than zero counts once toward its exercise’s assigned muscle group. Mark warm-up sets in the workout More menu to exclude them; older unmarked sets are treated as working sets.</p>'+
+  '<p class="helper">Weekly totals use Monday–Sunday calendar weeks. Each standard set or advanced sequence with recorded repetitions counts once toward its assigned muscle group. Extra stages and mini-sets do not count separately. Mark warm-up sets in the workout More menu to exclude them; older unmarked sets are treated as working sets.</p>'+
   table+
   '<p class="helper">Changing an exercise’s muscle group also updates the classification of its historical sets. These are set counts, not weight × reps volume.</p>'+(inline?'</section>':'</details>');
 }
