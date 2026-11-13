@@ -170,7 +170,6 @@
 .exercise-muscle-controls{display:grid;gap:10px}
 .exercise-muscle-controls .field{font-size:12px;color:var(--muted);font-weight:700}
 .exercise-muscle-controls select{margin-top:6px}
-.detail .exercise-secondary-tags>summary{cursor:pointer;padding:11px;color:var(--muted);font-size:12px;line-height:1.45}
 .exercise-remove-row{border-top:1px solid var(--border);padding-top:12px;margin-top:2px}
 .muscle-week-overview{margin:12px 0 25px}
 .muscle-week-overview>summary{display:flex;align-items:center;justify-content:space-between;min-height:40px;cursor:pointer;font-weight:700}
