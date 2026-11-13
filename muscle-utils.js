@@ -47,6 +47,7 @@ export function weekStart(date){
  return day;
 }
 const validReps=set=>{
+ if(set?.warmup===true)return false;
  if(set?.reps===''||set?.reps===null||set?.reps===undefined)return false;
  const value=Number(set.reps);
  return Number.isFinite(value)&&value>0;
