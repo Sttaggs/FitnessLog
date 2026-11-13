@@ -105,7 +105,9 @@ test('Progress exercise picker is searchable, accessible, and never creates exer
  assert.match(html,/id="progress-exercise-search"/);
  assert.match(html,/role="combobox"/);
  assert.match(html,/aria-controls="progress-exercise-options"/);
- assert.match(html,/value="Cable lateral raise"/);
+ assert.match(html,/id="progress-exercise-search" type="text" value=""/);
+ assert.match(html,/placeholder="Type an exercise name"/);
+ assert.match(html,/Viewing: <strong>Cable lateral raise<\/strong>/);
  assert.match(html,/id="progress-exercise-options"/);
  assert.doesNotMatch(html,/id="progress-exercise" data-progress-control="exercise"/);
  assert.doesNotMatch(html,/data-form="add-exercise"/);
