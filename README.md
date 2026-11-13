@@ -41,6 +41,12 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Delete a workout from the bottom of its editor, with confirmation
 - Create, resume, edit, and delete workout sessions
 - Add exercises in one step; new names are automatically saved and linked to their previous and future workout records
+- On first launch after this update, a built-in starter catalog adds the owner's 106 supplied exercise entries as 105 distinct saved exercises. Close-grip bench press appeared under both Chest and Triceps and is stored only once, with Chest primary and Triceps secondary.
+- Starter catalog groups: Chest, Shoulders, Back, Biceps, Triceps, Quadriceps, Hamstrings and Glutes, Core and Mobility, and Cardio and Conditioning. Built-in categories are editable descriptions, not a rigid training program. Cardio and mobility activities are not assigned muscle-set volume unless given a primary muscle.
+- Exercise library has collapsible categories and a quick search by exercise name or muscle, while the existing live exercise search and the ability to enter unlimited new exercises remain unchanged.
+- Starter entries are installed only once per device, avoid exact-name duplicates, and preserve existing exercise IDs, historical data and user-entered muscle/target information. The catalog does not create workout sessions. An intentionally removed starter entry is not recreated on every subsequent app launch.
+- Jogging, Sprinting, First-step acceleration drills, Disc golf and Kayaking also appear in the dedicated Cardio activity selector, alongside the existing cardio options.
+
 - Automatically open the first optional set after adding an exercise
 - When adding a new exercise, collapse earlier exercise cards so only the newest entry remains expanded
 - Each new set starts with empty stored fields. If the corresponding set in the last completed exercise session has recorded weight, reps, or RPE, those values appear only as faded placeholders; they are never counted as new performance.
@@ -64,6 +70,12 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Export date-filtered CSV and JSON; printable PDF report via browser print-to-PDF
 - PWA install support and offline shell cache
 
+
+## Exercise catalog
+
+The initial built-in catalog comes from the owner's supplied list and is imported directly into this device's IndexedDB. No workout or exercise data is transmitted to GitHub or Cloudflare. The install is non-destructive: existing saved exercises with matching normalized names retain their IDs, history and individually configured preferences. Previously blank primary-muscle labels may be initialized from the supplied categories on the first install; populated labels are preserved. The same name in multiple sections is represented once, not as two disconnected histories.
+
+The catalog is a starting point, not a restriction: you can continue creating custom exercises by typing new names during a workout or in the Library. The Library displays the catalog in collapsed, searchable categories rather than one long list. Restoring an older backup later replaces the saved library according to the backup's contents; the starter import does not automatically re-add intentionally deleted items at every page load.
 
 ## Progress page
 
