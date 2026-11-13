@@ -236,25 +236,24 @@ const historicalField = (set,key,fallback) => {
  const value=set?.[key];
  return value!==''&&value!==null&&value!==undefined?String(value):fallback;
 };
+function restMinutesLabel(seconds){
+ return String(Math.round(seconds/60*100)/100);
+}
 function renderRestTimer(x) {
  const key=restKey(x);
  const timer=readRestTimer();
  const active=timer.mode!=='idle'&&timer.exerciseId===key;
- const remaining=active?timer.remaining:restPreference(key);
  const mode=active?timer.mode:'idle';
- const primary=mode==='running'?['rest-pause','Ⅱ','Pause rest timer']:
-   mode==='paused'?['rest-resume','▶','Resume rest timer']:['rest-start','▶','Start rest timer'];
- const control=(action,label,description,extra='')=>
-  '<button type="button" class="rest-mini-button '+extra+'" data-action="'+action+'" data-id="'+e(x.id)+'" aria-label="'+description+'" title="'+description+'">'+label+'</button>';
- return '<div class="rest-mini" data-exercise-timer="'+e(key)+'" data-mode="'+mode+'" role="group" aria-label="Rest timer for '+e(x.name)+'">'+
-  '<span class="rest-mini-label">Rest</span>'+
-  '<output class="rest-mini-clock" data-rest-clock aria-label="Rest time '+restTimeLabel(remaining)+'">'+restTimeLabel(remaining)+'</output>'+
-  '<div class="rest-mini-controls">'+
-   control('rest-minus','−15','Reduce rest time by 15 seconds')+
-   control('rest-plus','+15','Increase rest time by 15 seconds')+
-   '<button type="button" class="rest-mini-button rest-mini-primary" data-rest-primary data-action="'+primary[0]+'" data-id="'+e(x.id)+'" aria-label="'+primary[2]+'" title="'+primary[2]+'">'+primary[1]+'</button>'+
-   '<button type="button" class="rest-mini-button" data-rest-reset data-action="rest-reset" data-id="'+e(x.id)+'" aria-label="Reset rest timer" title="Reset rest timer" '+(!active?'hidden':'')+'>↺</button>'+
-  '</div></div>';
+ const isRunning=mode==='running';
+ const isFinished=mode==='finished';
+ const primaryAction=active?'rest-stop':'rest-start';
+ return '<div class="rest-tiny" data-exercise-timer="'+e(key)+'" data-mode="'+mode+'" role="group" aria-label="Rest timer for '+e(x.name)+'">'+
+  '<span class="rest-tiny-label">Rest</span>'+
+  '<input class="rest-tiny-minutes" data-rest-minutes data-exercise-id="'+e(x.id)+'" type="number" min="0.25" max="30" step="any" inputmode="decimal" aria-label="Rest duration in minutes" value="'+e(restMinutesLabel(restPreference(key)))+'" '+(active?'hidden':'')+'>'+
+  '<span class="rest-tiny-unit" data-rest-unit '+(active?'hidden':'')+'>min</span>'+
+  '<output class="rest-tiny-countdown" data-rest-clock aria-label="Rest time remaining" '+(!active?'hidden':'')+'>'+restTimeLabel(active?timer.remaining:0)+'</output>'+
+  '<button type="button" class="rest-tiny-action" data-rest-primary data-action="'+primaryAction+'" data-id="'+e(x.id)+'" aria-label="'+(active?'Stop rest timer':'Start rest timer')+'">'+(active?(isFinished?'Reset':'Stop'):'Start')+'</button>'+
+  '</div>';
 }
 function restKey(entry) {
  return entry.exerciseId||normalizeName(entry.name)||entry.id;
@@ -301,23 +300,22 @@ function refreshRestTimers(){
   const active=timer.mode!=='idle'&&timer.exerciseId===key;
   const mode=active?timer.mode:'idle';
   panel.dataset.mode=mode;
-  const remaining=active?timer.remaining:restPreference(key);
-  const time=panel.querySelector('[data-rest-clock]');
-  if(time){
-   time.textContent=restTimeLabel(remaining);
-   time.setAttribute('aria-label','Rest time '+restTimeLabel(remaining));
+  const input=panel.querySelector('[data-rest-minutes]');
+  const unit=panel.querySelector('[data-rest-unit]');
+  const countdown=panel.querySelector('[data-rest-clock]');
+  if(input)input.hidden=active;
+  if(unit)unit.hidden=active;
+  if(countdown){
+   countdown.hidden=!active;
+   if(active)countdown.textContent=restTimeLabel(timer.remaining);
   }
-  const primary=panel.querySelector('[data-rest-primary]');
-  if(primary){
-   const action=mode==='running'?'rest-pause':mode==='paused'?'rest-resume':'rest-start';
-   const description=mode==='running'?'Pause rest timer':mode==='paused'?'Resume rest timer':'Start rest timer';
-   primary.dataset.action=action;
-   primary.textContent=mode==='running'?'Ⅱ':'▶';
-   primary.setAttribute('aria-label',description);
-   primary.title=description;
+  const button=panel.querySelector('[data-rest-primary]');
+  if(button){
+   const label=active?mode==='finished'?'Reset':'Stop':'Start';
+   button.dataset.action=active?'rest-stop':'rest-start';
+   button.textContent=label;
+   button.setAttribute('aria-label',label+' rest timer');
   }
-  const reset=panel.querySelector('[data-rest-reset]');
-  if(reset)reset.hidden=!active;
  }
 }
 function renderExercise(x,i) {
@@ -656,23 +654,26 @@ async function action(name,el) {
   state.previousOpenId=shouldOpen?el.dataset.id:null;
   return;
  }
- if(['rest-start','rest-pause','rest-resume','rest-reset','rest-minus','rest-plus'].includes(name)){
+ if(name==='rest-start'||name==='rest-stop'){
   const exercise=s?.exercises?.find(x=>x.id===el.dataset.id);
   if(!exercise)return;
   const key=restKey(exercise);
-  const active=readRestTimer();
-  const same=active.mode!=='idle'&&active.exerciseId===key;
-  if(name==='rest-start'){
+  if(name==='rest-stop'){
+   const running=readRestTimer();
+   if(running.mode!=='idle'&&running.exerciseId===key)resetRestTimer();
+  }else{
+   const input=document.querySelector('[data-rest-minutes][data-exercise-id="'+exercise.id+'"]');
+   const minutes=Number(input?.value);
+   if(!input||input.value.trim()===''||!Number.isFinite(minutes)||minutes<0.25||minutes>30){
+    toast('Enter a rest time between 0.25 and 30 minutes');
+    input?.focus();
+    return;
+   }
+   const seconds=Math.round(minutes*60);
+   setRestPreference(key,seconds);
    unlockRestSound();
-   startRestTimer(key,exercise.name,restPreference(key));
-  }else if(name==='rest-minus'||name==='rest-plus'){
-   const delta=name==='rest-plus'?15:-15;
-   if(same&&(active.mode==='running'||active.mode==='paused'))adjustRestTimer(delta);
-   else setRestPreference(key,restPreference(key)+delta);
-  }else if(same){
-   if(name==='rest-pause')pauseRestTimer();
-   if(name==='rest-resume'){unlockRestSound();resumeRestTimer();}
-   if(name==='rest-reset')resetRestTimer();
+   startRestTimer(key,exercise.name,seconds);
+   input.blur();
   }
   refreshRestTimers();
   return;
@@ -796,6 +797,14 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(ev.target.matches?.('[data-rest-minutes]')){
+  const minutes=Number(ev.target.value);
+  if(ev.target.value.trim()!==''&&Number.isFinite(minutes)&&minutes>=0.25&&minutes<=30){
+   const exercise=state.session?.exercises?.find(x=>x.id===ev.target.dataset.exerciseId);
+   if(exercise)setRestPreference(restKey(exercise),Math.round(minutes*60));
+  }
+  return;
+ }
  const progress=ev.target.dataset?.progressControl;
  if(progress){
   const value=ev.target.value;
