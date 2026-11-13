@@ -1,8 +1,10 @@
 // Pure, conservative progression analysis. All values come from recorded sets.
 // RPE is interpreted as effort context, never inserted into the e1RM formula.
 import {numericValue} from './analytics.js';
+import {isAdvancedSet} from './advanced-utils.js';
 
 export function performedSet(set){
+ if(isAdvancedSet(set))return null;
  const weight=numericValue(set?.weight), reps=numericValue(set?.reps);
  if(weight===null||weight<=0||reps===null||!Number.isInteger(reps)||reps<=0)return null;
  return {weight,reps,rpe:validRpe(set?.rpe),warmup:set?.warmup===true};
@@ -12,7 +14,7 @@ export function validRpe(value){
  return rpe!==null&&rpe>=1&&rpe<=10?rpe:null;
 }
 export function estimatedMax(set){
- if(set?.warmup===true)return null;
+ if(set?.warmup===true||isAdvancedSet(set))return null;
  const performance=performedSet(set);
  if(!performance||performance.reps>10)return null;
  const {weight,reps}=performance;
@@ -122,6 +124,7 @@ export function nextSessionAdvice(record,exercise){
   return {kind:'not-set',label:'Set an optional exercise target',description:'Choose working sets, reps and weight increment under More in a workout. Progress analysis works without targets.',suggested:null};
  }
  if(!record)return {kind:'missing',label:'Awaiting a completed session',description:'A finished workout with this exercise is needed before suggesting an adjustment.',suggested:null};
+ if((record.sets||[]).some(s=>s?.warmup!==true&&isAdvancedSet(s)))return {kind:'advanced',label:'Technique session recorded',description:'This workout included advanced sets. Compare standard working sets before changing the load; no automatic progression suggestion is made.',suggested:null};
  const entries=(record.sets||[]).filter(s=>s?.warmup!==true)
   .filter(s=>['weight','reps','rpe'].some(key=>s?.[key]!==''&&s?.[key]!==null&&s?.[key]!==undefined));
  const measured=entries.map(performedSet);
