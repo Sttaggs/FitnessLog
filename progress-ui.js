@@ -32,10 +32,12 @@ function renderExerciseProgress({state,e,displayDate}){
  const available=state.exercises.slice().sort((a,b)=>
   String(dates.get(b.id)||'').localeCompare(String(dates.get(a.id)||''))||a.name.localeCompare(b.name));
  const chosen=available.find(ex=>ex.id===state.progressExercise)||available[0];
- const select='<label class="field progress-exercise-picker">Exercise'+
-  '<select id="progress-exercise" data-progress-control="exercise" aria-label="Select exercise">'+
-  (available.length?available.map(ex=>'<option value="'+e(ex.id)+'" '+(ex.id===chosen?.id?'selected':'')+'>'+e(ex.name)+'</option>').join(''):'<option value="">No exercises saved</option>')+
-  '</select></label>';
+ const select='<div class="field exercise-search-field progress-exercise-picker progress-exercise-search-field">'+
+  '<label for="progress-exercise-search">Find exercise</label>'+
+  '<input id="progress-exercise-search" type="search" value="'+e(chosen?.name||'')+'" placeholder="'+(available.length?'Search saved exercises':'No exercises saved')+'"'+
+  ' autocomplete="off" spellcheck="false" enterkeyhint="search" role="combobox" aria-autocomplete="list" aria-haspopup="listbox"'+
+  ' aria-controls="progress-exercise-options" aria-expanded="false"'+(available.length?'':' disabled')+'>'+
+  '<div id="progress-exercise-options" class="exercise-search-options" role="listbox" aria-label="Matching saved exercises" hidden></div></div>';
  if(!chosen)return '<section class="card progress-main-card">'+select+
   '<p class="helper">Log an exercise and finish a workout to begin tracking progress.</p></section>';
  const history=[];
