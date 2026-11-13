@@ -848,7 +848,12 @@ document.addEventListener('toggle',ev=>{
  const card=ev.target;
  if(!document.contains(card))return;
  if(card.matches?.('[data-progress-comparison]')){state.progressCompareOpen=card.open;return;}
- if(card.matches?.('[data-progress-target-editor]')){state.progressTargetOpen=card.open;return;}
+ if(card.matches?.('[data-progress-target-editor]')){
+  const wasOpen=state.progressTargetOpen;
+  state.progressTargetOpen=card.open;
+  if(wasOpen&&!card.open&&state.tab==='progress'&&!state.session)render().catch(console.error);
+  return;
+ }
  if(card.matches?.('[data-exercise-more]')){
   if(card.open)state.moreOpen.add(card.dataset.exerciseMore);
   else state.moreOpen.delete(card.dataset.exerciseMore);
@@ -880,7 +885,8 @@ document.addEventListener('change',async ev=>{
   }
   ex.progressTarget={...(ex.progressTarget||{}),[field]:raw===''?'':Number(raw)};
   try{await put('exercises',ex);}catch(err){console.error(err);toast('Could not save target');return;}
-  if(state.tab==='progress'&&!state.session)await render();
+  // Do not remove the focused field while editing multiple targets on iPhone.
+  // The summary refreshes when the optional editor is closed.
   return;
  }
  if(ev.target.dataset?.warmupEntry){
