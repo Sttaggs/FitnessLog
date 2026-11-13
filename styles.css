@@ -240,3 +240,23 @@
 .progress-method{border-top:1px solid var(--border);margin-top:10px;padding-top:5px}
 .progress-method>summary{cursor:pointer;padding:9px 0;color:var(--muted);font-size:12px}
 .progress-method>.helper{padding:0 0 5px;margin:4px 0 7px}
+
+
+/* Searchable starter exercise catalog. Groups remain collapsed until opened. */
+.library-search-field{margin:8px 0 14px}
+.library-search-field label{margin-bottom:7px}
+.library-search-field input{min-height:42px}
+.library-search-field>.helper{margin:7px 2px 0}
+.library-category{border:1px solid var(--border);background:var(--surface);border-radius:12px;margin:8px 0;overflow:hidden}
+.library-category[hidden],.library-exercise[hidden]{display:none!important}
+.library-category>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:47px;padding:12px 14px;font-size:14px;font-weight:750;cursor:pointer;list-style:none}
+.library-category>summary::-webkit-details-marker{display:none}
+.library-category>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.library-category>summary:before{content:'›';color:var(--muted);font-size:19px;margin-right:5px;line-height:1;transition:transform .15s ease}
+.library-category[open]>summary:before{transform:rotate(90deg)}
+.library-category>summary>span{flex:1}
+.library-category>summary>small{background:var(--surface2);border-radius:20px;padding:3px 8px;font-size:11px;color:var(--muted)}
+.library-category[open]>summary{border-bottom:1px solid var(--border)}
+.library-category-body{padding:5px 9px 11px}
+.library-category-body .library-exercise{margin:7px 0;padding:10px}
+.library-category-body .library-exercise .item-title{font-size:13px}
