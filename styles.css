@@ -145,15 +145,15 @@
 .progress-overview[open]>summary{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:12px}
 .progress-overview .progress-summary{margin:8px 0}
 
-/* Compact inline rest control. Deliberately one row without setup or presets. */
-.rest-mini{display:flex;align-items:center;gap:6px;width:100%;min-height:39px;margin:9px 0;border:1px solid #375043;border-radius:9px;background:#17241e;padding:4px 6px;overflow:hidden}
-.rest-mini [hidden]{display:none!important}
-.rest-mini-label{font-size:11px;font-weight:700;color:var(--accent);flex:0 0 auto}
-.rest-mini-clock{font-size:16px;line-height:1.2;letter-spacing:-.025em;font-weight:750;min-width:45px;font-variant-numeric:tabular-nums;text-align:center;flex:0 0 auto}
-.rest-mini[data-mode="running"] .rest-mini-clock{color:var(--accent)}
-.rest-mini[data-mode="finished"] .rest-mini-clock{color:var(--accent)}
-.rest-mini-controls{display:flex;gap:4px;margin-left:auto;align-items:center;justify-content:flex-end;min-width:0}
-.rest-mini-button{display:inline-flex;align-items:center;justify-content:center;min-width:33px;height:31px;border-radius:7px;padding:0 4px;border:1px solid #43534a;background:#27352d;color:var(--text);font-size:11px;font-weight:700;white-space:nowrap;flex:0 0 auto;cursor:pointer}
-.rest-mini-button.rest-mini-primary{background:var(--accent);color:#16250e;border-color:var(--accent);font-size:15px}
-.rest-mini-button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-@media(max-width:370px){.rest-mini{gap:4px;padding:4px}.rest-mini-controls{gap:3px}.rest-mini-button{min-width:30px;height:30px;padding:0 3px}.rest-mini-label{font-size:10px}.rest-mini-clock{font-size:15px;min-width:42px}}
+/* One-line rest timer: type minutes and start, without extra controls. */
+.rest-tiny{display:flex;align-items:center;gap:8px;margin:8px 0 10px;padding:4px 8px;background:#19251e;border:1px solid #375043;border-radius:8px;min-height:38px}
+.rest-tiny [hidden]{display:none!important}
+.rest-tiny-label{color:var(--muted);font-size:12px;font-weight:650;flex:0 0 auto}
+.rest-tiny-minutes{box-sizing:border-box;width:56px;min-height:29px;height:29px;padding:3px 5px;border-radius:6px;font-size:14px;text-align:center;appearance:textfield;-moz-appearance:textfield}
+.rest-tiny-minutes::-webkit-inner-spin-button,.rest-tiny-minutes::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.rest-tiny-unit{color:var(--muted);font-size:12px;margin-left:-5px}
+.rest-tiny-countdown{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+.rest-tiny-action{margin-left:auto;min-height:30px;min-width:55px;padding:4px 10px;background:var(--accent);border:0;border-radius:7px;font-weight:750;color:#18230f;font-size:12px}
+.rest-tiny[data-mode="running"] .rest-tiny-action,.rest-tiny[data-mode="paused"] .rest-tiny-action{color:var(--text);background:var(--surface2);border:1px solid var(--border)}
+.rest-tiny[data-mode="finished"] .rest-tiny-action{color:var(--accent);background:var(--surface2);border:1px solid var(--border)}
+.rest-tiny-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
