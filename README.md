@@ -45,7 +45,7 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - A compact Previous performance row with a visible chevron stays closed until tapped, then reveals the previous completed workout's sets and notes; tap again to hide them
 - Live exercise lookup searches saved exercise names by partial matches (including middle words), capitalization-insensitive matching, and likely spelling corrections
 - Selecting an existing suggestion uses its permanent exercise ID; similar names require confirmation before a separate record is created
-- Compact, single-row rest timer at the top of each expanded exercise, with 15-second adjustments and start/pause/resume/reset. The in-app timer can beep while the web app remains active.
+- Minimal one-row rest timer above the exercise sets: enter a duration in minutes (for example, 3 or 1.5), tap Start, and see the countdown with a Stop/Reset control. The timer does not record rest periods and can beep only while the web app is active.
 - Rest countdowns and per-exercise preferences use localStorage, not workout records; timer values are not recorded in history or exports
 - The timer uses the actual end timestamp, so it resumes showing the correct time after switching apps or locking the device. Web audio and notifications are not guaranteed while the page is suspended or closed.
 - Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
