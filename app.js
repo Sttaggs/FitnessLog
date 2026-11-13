@@ -2,6 +2,8 @@ import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {ADVANCED_TYPES,isAdvancedSet,setTechnique,techniqueLabel,newAdvancedSet,setTechniqueOnExisting,hasRecordedStages,MAX_STAGES,linkSuperset,removeSuperset,cleanSupersets,normalizeSetPlan,templatePlanForSet} from './advanced-utils.js';
+import {renderAdvancedSetPanel,renderAdvancedTools,renderSupersetSettings,supersetLabel} from './advanced-ui.js';
 import {templateFromWorkout,templateToEntries,sanitizedTemplate,validSetCount,cleanTemplateName,templateSummary,MAX_TEMPLATE_EXERCISES} from './template-utils.js';
 import {CATALOG_CATEGORIES,planCatalogInstall} from './exercise-catalog.js';
 import {muscleChoices,muscleLabel,exercisePrimaryMuscle,singleMuscleExercise} from './muscle-utils.js';
@@ -16,7 +18,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -453,6 +455,7 @@ function renderExerciseMore(x,scope,type){
     '<label class="exercise-warmup-row"><input type="checkbox" data-warmup-entry="'+e(x.id)+'" data-warmup-set="'+e(set.id)+'" '+(set.warmup===true?'checked':'')+'>'+
     '<span>Set '+(j+1)+' · '+e(set.weight||'—')+' lb × '+e(set.reps||'—')+' reps</span></label>').join('')+
    '</div><p class="helper">Marked warm-ups are excluded from strength estimates and target checks.</p></details>'+
+  renderSupersetSettings(x,state.session?.exercises,e)+
   memoField('Exercise notes',scope,'notes',x.notes||'')+
   '<div class="exercise-remove-row"><button type="button" class="btn danger small" data-action="delete-exercise" data-id="'+e(x.id)+'">Remove exercise</button></div>'+
   '</div></details>';
@@ -463,7 +466,7 @@ function renderExercise(x,i) {
  const scope='exercise:'+x.id;
  const type=x.technique||'Standard';
  return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
- <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(type)} · ${x.sets?.length||0} ${x.sets?.length===1?'set':'sets'}</small></div><span class="muted">▾</span></div></summary>
+ <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(supersetLabel(x,state.session?.exercises)?supersetLabel(x,state.session?.exercises)+' · ':'')}${e(type)} · ${x.sets?.length||0} ${x.sets?.length===1?'set':'sets'}</small></div><span class="muted">▾</span></div></summary>
  <div class="detail-body">
  ${renderRestTimer(x)}
  ${prev?`<section class="previous-reference">
@@ -482,9 +485,10 @@ function renderExercise(x,i) {
  <input aria-label="Set ${j+1} weight in pounds" inputmode="decimal" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="${e(historicalField(prev?.sets?.[j],'weight','lb'))}">
  <input aria-label="Set ${j+1} repetitions" inputmode="numeric" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="${e(historicalField(prev?.sets?.[j],'reps','—'))}">
  <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="${e(historicalField(prev?.sets?.[j],'rpe','1–10'))}">
- <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>`).join('')}
+ <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>${renderAdvancedSetPanel(x,set,e,state.advancedOpen.has(x.id+':'+set.id))}`).join('')}
  ${prev?'<p class="helper historical-hint">Faded values show last time; only typed values are saved.</p>':''}
  <div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
+ ${renderAdvancedTools(x,e)}
  ${renderExerciseMore(x,scope,type)}
  </div></details>`;
 }
@@ -1079,6 +1083,7 @@ function findScope(scope){
  if(kind==='exercise')return state.session.exercises.find(x=>x.id===id);
  if(kind==='activity')return state.session.activities.find(x=>x.id===id);
  if(kind==='set')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId);
+ if(kind==='stage')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId)?.stages?.find(x=>x.id===scope.split(':')[3]);
 }
 document.addEventListener('click',async ev=>{
  const nav=ev.target.closest('[data-tab]');if(nav){if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.moreOpen.clear();state.libraryDetail=null;await render();return;}
@@ -1212,6 +1217,11 @@ document.addEventListener('toggle',ev=>{
   const wasOpen=state.progressTargetOpen;
   state.progressTargetOpen=card.open;
   if(wasOpen&&!card.open&&state.tab==='progress'&&!state.session)render().catch(console.error);
+  return;
+ }
+ if(card.matches?.('[data-advanced-set]')){
+  if(card.open)state.advancedOpen.add(card.dataset.advancedSet);
+  else state.advancedOpen.delete(card.dataset.advancedSet);
   return;
  }
  if(card.matches?.('[data-exercise-more]')){
