@@ -1041,6 +1041,69 @@ async function action(name,el) {
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
  if(name==='finish'){const wasActive=s.status==='active';s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='add-advanced-set'){
+  const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
+  const type=el.dataset.type;
+  if(!entry||!ADVANCED_TYPES.includes(type))return;
+  const added=newAdvancedSet(type,newId);
+  entry.sets.push(added);
+  state.expanded.add(entry.id);
+  state.advancedOpen.add(entry.id+':'+added.id);
+  await saveSession();await render();
+  return;
+ }
+ if(name==='convert-set'){
+  const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
+  if(!entry)return;
+  const setId=main.querySelector('[data-convert-set="'+entry.id+'"]')?.value;
+  const type=main.querySelector('[data-convert-type="'+entry.id+'"]')?.value;
+  const chosen=entry.sets.find(x=>x.id===setId);
+  if(!chosen||!['standard',...ADVANCED_TYPES].includes(type))return;
+  if(setTechnique(chosen)===type){toast('Set already uses this type');return;}
+  if(hasRecordedStages(chosen)&&!confirm('Changing the set type removes its recorded extra stages. Continue?'))return;
+  setTechniqueOnExisting(chosen,type,newId);
+  if(type!=='standard')state.advancedOpen.add(entry.id+':'+chosen.id);
+  else state.advancedOpen.delete(entry.id+':'+chosen.id);
+  await saveSession();await render();
+  return;
+ }
+ if(name==='add-stage'||name==='remove-stage'){
+  const entry=s?.exercises?.find(x=>x.id===el.dataset.exercise);
+  const chosen=entry?.sets?.find(set=>set.id===el.dataset.set);
+  if(!chosen||!isAdvancedSet(chosen))return;
+  chosen.stages=Array.isArray(chosen.stages)?chosen.stages:[];
+  if(name==='add-stage'){
+   if(chosen.stages.length>=MAX_STAGES){toast('Stage limit reached');return;}
+   chosen.stages.push({id:newId(),weight:'',reps:'',rpe:''});
+  }else{
+   const stage=chosen.stages.find(stage=>stage.id===el.dataset.stage);
+   if(!stage)return;
+   if(['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined)&&
+      !confirm('Remove this recorded stage?'))return;
+   chosen.stages=chosen.stages.filter(stage=>stage.id!==el.dataset.stage);
+  }
+  state.advancedOpen.add(entry.id+':'+chosen.id);
+  await saveSession();await render();
+  return;
+ }
+ if(name==='link-superset'){
+  const first=s?.exercises?.findIndex(x=>x.id===el.dataset.id);
+  const partner=main.querySelector('[data-superset-partner="'+el.dataset.id+'"]')?.value;
+  const second=s?.exercises?.findIndex(x=>x.id===partner);
+  if(first===undefined||first<0||second===undefined||second<0){toast('Select an exercise to link');return;}
+  if((s.exercises[first].supersetId||s.exercises[second].supersetId)&&
+     !confirm('Replace any existing superset links for these exercises?'))return;
+  linkSuperset(s.exercises,first,second,newId);
+  await saveSession();await render();toast('Superset linked');
+  return;
+ }
+ if(name==='unlink-superset'){
+  const index=s?.exercises?.findIndex(x=>x.id===el.dataset.id);
+  if(index===undefined||index<0)return;
+  removeSuperset(s.exercises,index);
+  await saveSession();await render();toast('Superset unlinked');
+  return;
+ }
  if(name==='add-set'){
   const x=s.exercises.find(x=>x.id===el.dataset.id);
   // The new set starts with no recorded measurements. Its weight, reps and
@@ -1053,8 +1116,8 @@ async function action(name,el) {
   document.querySelectorAll('#exercise-'+x.id+' input[data-field="weight"]').item(x.sets.length-1)?.focus();
   return;
  }
- if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
- if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.moreOpen.delete(el.dataset.id);state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
+ if(name==='delete-set'){const x=s?.exercises?.find(x=>x.id===el.dataset.exercise);if(!x)return;state.advancedOpen.delete(x.id+':'+el.dataset.id);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
+ if(name==='delete-exercise'){if(!s||!confirm('Remove exercise?'))return;const index=s.exercises.findIndex(x=>x.id===el.dataset.id);if(index<0)return;removeSuperset(s.exercises,index);state.moreOpen.delete(el.dataset.id);state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
  if(name==='delete-activity'){s.activities=s.activities.filter(a=>a.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
