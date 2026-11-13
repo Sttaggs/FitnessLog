@@ -194,7 +194,7 @@ async function addExerciseToWorkout(master){
  document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});
 }
 const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
-const hasSetData = set => Boolean(set && ['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined));
+const hasSetData = set => Boolean(set && (['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined) || (set.stages||[]).some(stage=>['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined))));
 const recordedSets = x => (x.sets||[]).filter(hasSetData);
 async function ensureExercise(name) {
  const clean=String(name||'').trim().replace(/\s+/g,' ');
@@ -708,18 +708,26 @@ function renderSettings() {
  <input id="restore-file" type="file" accept="application/json,.json" hidden>
  </div>
  <p class="helper">Photo-inclusive backup is optional and may be large. Photo files are included only when you explicitly choose the photo-inclusive option. Restoring a workout-only backup preserves existing photos on this device.</p></div>
- <div class="card"><h2>About</h2><p class="muted">Exercise analytics track recorded weight, repetitions, and RPE. Progress photos are private, dated, and comparable by view. Advanced training techniques and body measurements remain planned.</p></div>`;
+ <div class="card"><h2>About</h2><p class="muted">Exercise analytics track standard weight, repetitions, and RPE; advanced stages are recorded separately and saved in backups. Progress photos remain private. Body measurements remain planned.</p></div>`;
 }
 function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderReport() {
  const ss=selected();
- const setDescription = set=>[
+ const setValues=set=>[
   set.weight!==''&&set.weight!=null?set.weight+' lb':'',
   set.reps!==''&&set.reps!=null?set.reps+' reps':'',
   set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:''
  ].filter(Boolean).join(' · ');
+ const setDescription=set=>{
+  const base=setValues(set);
+  if(!isAdvancedSet(set))return base;
+  const type=setTechnique(set);
+  const stages=(set.stages||[]).map((stage,index)=>
+   (type==='myo'?'Mini '+(index+1):'Stage '+(index+2))+': '+(setValues(stage)||'not recorded')).join(' / ');
+  return techniqueLabel(set)+': '+(base||'not recorded')+(stages?' / '+stages:'');
+ };
  return `<div class="no-print row between" style="margin-bottom:12px">
  ${button('← History','report-close','secondary small')}${button('Print / Save PDF','print','small')}</div>
  <div class="report print-area">
@@ -740,12 +748,19 @@ function renderReport() {
 function download(name, body, mime) {const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function csvValue(x) {return '"'+String(x??'').replace(/"/g,'""')+'"';}
 function exportCsv() {
- const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes']];
+ const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes','set_method','stage']];
  for(const s of selected()) {
   for(const x of s.exercises||[]) {
    const sets=recordedSets(x);
-   if(sets.length) sets.forEach((set,i)=>rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes]));
-   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes]);
+   if(sets.length)sets.forEach((set,i)=>{
+    const method=isAdvancedSet(set)?techniqueLabel(set):'Standard';
+    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes,method,'Main']);
+    if(isAdvancedSet(set))for(const [j,stage] of (set.stages||[]).entries()){
+     const level=setTechnique(set)==='myo'?'Mini '+(j+1):'Stage '+(j+2);
+     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',stage.rpe||'',s.intensity,s.fatigue,x.notes,method,level]);
+    }
+   });
+   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','']);
   }
   for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes]);
  }
