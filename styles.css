@@ -254,3 +254,6 @@
 .library-category-body{padding:5px 9px 11px}
 .library-category-body .library-exercise{margin:7px 0;padding:10px}
 .library-category-body .library-exercise .item-title{font-size:13px}
+
+.progress-viewing-exercise{font-size:12px;color:var(--muted);margin:-6px 0 13px;line-height:1.4}
+.progress-viewing-exercise strong{color:var(--text);font-weight:700}
