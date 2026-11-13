@@ -1,7 +1,8 @@
-import {list, get, put, remove, replaceStores, newId} from './db.js';
+import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {CATALOG_CATEGORIES,planCatalogInstall} from './exercise-catalog.js';
 import {muscleChoices,muscleLabel,exercisePrimaryMuscle,exerciseSecondaryMuscles} from './muscle-utils.js';
 import {restPreference,setRestPreference,readRestTimer,startRestTimer,pauseRestTimer,resumeRestTimer,resetRestTimer,adjustRestTimer,markRestAlerted,restTimeLabel} from './rest-timer.js';
 
@@ -12,7 +13,7 @@ const escapeHtml = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&
 const e = escapeHtml;
 const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
-const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
+const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
 const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
@@ -145,6 +146,17 @@ function previousPerformance(exerciseId,currentSessionId,currentDate) {
   }
  }
  return null;
+}
+// Install the user's requested starter exercises on this device once.
+// Existing workouts/exercise IDs and custom exercises are never replaced.
+// The marker also prevents intentionally removed starter entries reappearing.
+const CATALOG_INSTALLED_KEY='fitnesslog-starter-exercises-v1';
+async function installStarterExercises() {
+ try {if(localStorage.getItem(CATALOG_INSTALLED_KEY)==='installed')return;}catch {}
+ const existing=await list('exercises');
+ const {toInsert,toUpdate}=planCatalogInstall(existing,newId,new Date().toISOString());
+ if(toInsert.length||toUpdate.length)await putMany('exercises',[...toInsert,...toUpdate]);
+ try {localStorage.setItem(CATALOG_INSTALLED_KEY,'installed');}catch {}
 }
 // One-time, non-destructive linkage of exercise entries from earlier app versions.
 async function linkExistingExercises() {
@@ -521,25 +533,54 @@ function renderLibrary() {
   const ex=state.exercises.find(x=>x.id===state.libraryDetail);
   if(!ex){state.libraryDetail=null;return '<div class="card">Exercise not found.</div>';}
   const records=state.sessions.flatMap(s=>(s.exercises||[]).filter(x=>x.exerciseId===ex.id).map(x=>({session:s,entry:x})));
-  return `<button class="btn secondary small" data-action="library-back">← All exercises</button>
-  <div class="card" style="margin-top:12px"><h2>${e(ex.name)}</h2>
-  <p class="helper">${e(exercisePrimaryMuscle(ex)||'Muscle unspecified')} · ${e(ex.equipment||'Equipment unspecified')}</p>
-  <p>${records.length} recorded workout entries</p>${exerciseSecondaryMuscles(ex).length?`<p class="helper">Secondary muscles: ${e(exerciseSecondaryMuscles(ex).join(", "))}</p>`:""}</div>
-  <div class="section-heading"><h2>Performance history</h2></div>
-  ${records.length?records.map(({session,entry})=>`<div class="item">
-   <div class="row between"><div class="grow"><strong>${displayDate(session.date)}</strong><p class="helper" style="margin:4px 0">${e(session.name)}</p>
-   <p class="helper" style="margin:4px 0">${recordedSets(entry).map(set=>[set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',set.rpe?'RPE '+set.rpe:''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details'}</p></div>
-   <button class="btn small secondary" data-action="open" data-id="${session.id}">View</button></div></div>`).join(''):'<div class="card empty">No history for this exercise yet.</div>'}`;
+  return '<button class="btn secondary small" data-action="library-back">← All exercises</button>'+
+   '<div class="card" style="margin-top:12px"><h2>'+e(ex.name)+'</h2>'+
+   '<p class="helper">'+e(exercisePrimaryMuscle(ex)||ex.category||'Muscle unspecified')+' · '+e(ex.equipment||'Equipment unspecified')+'</p>'+
+   '<p>'+records.length+' recorded workout entries</p>'+
+   (exerciseSecondaryMuscles(ex).length?'<p class="helper">Secondary muscles: '+e(exerciseSecondaryMuscles(ex).join(', '))+'</p>':'')+'</div>'+
+   '<div class="section-heading"><h2>Performance history</h2></div>'+
+   (records.length?records.map(({session,entry})=>'<div class="item">'+
+    '<div class="row between"><div class="grow"><strong>'+e(displayDate(session.date))+'</strong><p class="helper" style="margin:4px 0">'+e(session.name)+'</p>'+
+    '<p class="helper" style="margin:4px 0">'+e(recordedSets(entry).map(set=>
+     [set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',set.rpe?'RPE '+set.rpe:''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details')+
+    '</p></div><button class="btn small secondary" data-action="open" data-id="'+e(session.id)+'">View</button></div></div>').join(''):
+    '<div class="card empty">No history for this exercise yet.</div>');
  }
- return `<div class="card"><h2>Exercise library</h2><p class="helper">New exercises are added here automatically when you log them. All workouts using the same exercise are linked.</p>
- <form data-form="library" class="stack"><div class="field"><label>New exercise (optional)</label><input name="name" placeholder="Exercise name" required></div><div class="field-row">
- <div class="field"><label>Primary muscle</label><select name="muscle">${muscleOptions('')}</select></div>
- <div class="field"><label>Equipment</label><input name="equipment" placeholder="Dumbbells"></div></div>
- <button class="btn secondary wide" type="submit">Add to library</button></form></div>
- <div class="section-heading"><h2>Saved exercises</h2><span class="pill">${state.exercises.length}</span></div>
- ${state.exercises.length?state.exercises.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(x=>`<div class="item"><div class="row between">
- <div class="grow"><div class="item-title">${e(x.name)}</div><small>${e(exercisePrimaryMuscle(x)||'Unassigned')} · ${e(x.equipment||'No equipment')}</small></div>
- <button class="btn small secondary" data-action="view-library" data-id="${x.id}">History</button></div></div>`).join(''):'<div class="card empty">Your exercises will appear here automatically as you log them.</div>'}`;
+ const grouped=new Map();
+ for(const exercise of state.exercises){
+  const category=String(exercise.category||exercisePrimaryMuscle(exercise)||'Custom');
+  if(!grouped.has(category))grouped.set(category,[]);
+  grouped.get(category).push(exercise);
+ }
+ const categories=[...CATALOG_CATEGORIES.filter(category=>grouped.has(category)),
+  ...[...grouped.keys()].filter(category=>!CATALOG_CATEGORIES.includes(category)).sort((a,b)=>a==='Custom'?1:b==='Custom'?-1:a.localeCompare(b))];
+ const sections=categories.map(category=>{
+  const items=grouped.get(category).slice().sort((a,b)=>a.name.localeCompare(b.name));
+  return '<details class="library-category" data-library-category="'+e(category)+'">'+
+   '<summary><span>'+e(category)+'</span><small>'+items.length+'</small></summary>'+
+   '<div class="library-category-body">'+items.map(exercise=>{
+    const primary=exercisePrimaryMuscle(exercise);
+    const subtitle=primary&&primary!==category?primary:primary||exercise.category||'Unassigned';
+    const searchable=exercise.name+' '+category+' '+primary+' '+(exercise.equipment||'');
+    return '<div class="item library-exercise" data-library-entry data-library-search="'+e(normalizeName(searchable))+'">'+
+     '<div class="row between"><div class="grow"><div class="item-title">'+e(exercise.name)+'</div>'+
+     '<small>'+e(subtitle)+' · '+e(exercise.equipment||'No equipment')+'</small></div>'+
+     '<button class="btn small secondary" data-action="view-library" data-id="'+e(exercise.id)+'">History</button></div></div>';
+   }).join('')+'</div></details>';
+ }).join('');
+ return '<div class="card"><h2>Exercise library</h2>'+
+  '<p class="helper">Choose from the starter exercises or add any custom exercise. Existing workout history remains linked.</p>'+
+  '<form data-form="library" class="stack"><div class="field"><label>New exercise (optional)</label>'+
+  '<input name="name" placeholder="Exercise name" required></div><div class="field-row">'+
+  '<div class="field"><label>Primary muscle</label><select name="muscle">'+muscleOptions('')+'</select></div>'+
+  '<div class="field"><label>Equipment</label><input name="equipment" placeholder="Dumbbells"></div></div>'+
+  '<button class="btn secondary wide" type="submit">Add to library</button></form></div>'+
+  '<div class="section-heading"><h2>Saved exercises</h2><span class="pill">'+state.exercises.length+'</span></div>'+
+  '<div class="library-search-field field"><label for="library-filter">Find a saved exercise</label>'+
+  '<input id="library-filter" type="search" placeholder="Search by name or muscle" autocomplete="off" spellcheck="false">'+
+  '<p id="library-filter-count" class="helper" aria-live="polite">Browse the categories below, or type to filter.</p></div>'+
+  (state.exercises.length?'<div id="library-groups">'+sections+'</div>':
+   '<div class="card empty">Your exercises will appear here automatically as you log them.</div>');
 }
 function renderSettings() {
  return `<div class="card"><h2>Data and privacy</h2>
@@ -802,6 +843,24 @@ function validateEntry(input,value,showError=false) {
 
 document.addEventListener('input',ev=>{
  if(ev.target.id==='exercise-entry-name')renderExerciseSuggestions(ev.target);
+ if(ev.target.id==='library-filter'){
+  const query=normalizeName(ev.target.value);
+  let count=0;
+  for(const section of main.querySelectorAll('[data-library-category]')){
+   let sectionCount=0;
+   for(const entry of section.querySelectorAll('[data-library-entry]')){
+    const matched=!query||entry.dataset.librarySearch.includes(query);
+    entry.hidden=!matched;
+    if(matched)sectionCount++;
+   }
+   section.hidden=Boolean(query)&&sectionCount===0;
+   if(query&&sectionCount>0)section.open=true;
+   if(!query)section.open=false;
+   count+=sectionCount;
+  }
+  const note=document.getElementById('library-filter-count');
+  if(note)note.textContent=query?count+' matching exercise'+(count===1?'':'s'):'Browse the categories below, or type to filter.';
+ }
 });
 document.addEventListener('focusin',ev=>{
  if(ev.target.id==='exercise-entry-name'&&ev.target.value.trim())renderExerciseSuggestions(ev.target);
@@ -1017,7 +1076,7 @@ document.addEventListener('submit',async ev=>{
  }
 });
 $('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
-(async()=>{try{await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
+(async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
 document.addEventListener('visibilitychange',refreshRestTimers);
 window.addEventListener('pageshow',refreshRestTimers);
