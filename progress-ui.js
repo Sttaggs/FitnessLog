@@ -66,9 +66,9 @@ function renderExerciseProgress({state,e,displayDate}){
  const statusNote=trend.change!==null?('Last 3 vs previous 3 measured sessions: '+signed(trend.change)+'.'):
   trend.count>1?'Latest estimated max vs previous: '+signed(trend.sessionChange)+'.':'Complete another eligible session to compare estimates.';
  const strengthNote=allMeasurements.length>0?'Based on the strongest eligible set (1–10 reps) from each completed session. The equation estimates strength; it does not measure a tested 1RM.':'An estimate needs recorded weight and 1–10 repetitions in the same set.';
- const preview=latestRecord?'<div class="progress-kpi"><span>Latest logged performance</span><strong>'+e(latestLabel)+'</strong>'+
+ const preview=latestRecord?'<div class="progress-kpi"><span>Best set · latest workout</span><strong>'+e(latestLabel)+'</strong>'+
    (rpeLabel?'<small>'+e(rpeLabel.replace(/^ · /,''))+'</small>':'')+'</div>':
-   '<div class="progress-kpi"><span>Latest logged performance</span><strong>—</strong></div>';
+   '<div class="progress-kpi"><span>Best set · latest workout</span><strong>—</strong></div>';
  const strength='<div class="progress-kpi"><span>Estimated 1RM</span><strong>'+
   (currentEstimate?numberLabel(currentEstimate.value)+' lb':'—')+'</strong>'+
   (currentEstimate?'<small>'+e(labelDate(currentEstimate.date,displayDate))+'</small>':'')+'</div>';
@@ -88,7 +88,9 @@ function renderExerciseProgress({state,e,displayDate}){
   '<div class="progress-chart-heading"><h2>Estimated strength</h2>'+controls+'</div>'+
   '<div class="progress-chart">'+(series.length?trendSvg(series,'weight'):
    '<div class="empty">No eligible estimates in this period.</div>')+'</div>'+
-  '<p class="helper">'+e(strengthNote)+'</p></section>';
+  '<p class="helper">'+e(strengthNote)+'</p>'+
+  '<details class="progress-method"><summary>How the trend is calculated</summary>'+
+   '<p class="helper">Estimated 1RM uses the Epley equation with recorded weight and 1–10 reps. Warm-ups are excluded when marked. The status compares the median estimates of the latest three measured sessions with the prior three; a change greater than 3% is highlighted as improvement or possible regression. This is a practical display threshold, not a diagnostic cutoff. RPE is shown separately and does not alter the estimate. Far-from-failure sets may underestimate capacity.</p></details></section>';
  const effort=rpeComparison?
   '<p class="helper">At '+e(numberLabel(rpeComparison.weight,2))+' lb × '+e(rpeComparison.reps)+
   ' reps, recorded RPE changed from '+e(rpeComparison.previous)+' to '+e(rpeComparison.current)+'. RPE provides context; it does not change estimated strength.</p>':'';
