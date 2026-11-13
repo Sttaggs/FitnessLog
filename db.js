@@ -29,6 +29,19 @@ export const list = (name) => store(name, 'readonly', s => s.getAll());
 export const get = (name, id) => store(name, 'readonly', s => s.get(id));
 export const put = (name, value) => store(name, 'readwrite', s => s.put(value));
 export const remove = (name, id) => store(name, 'readwrite', s => s.delete(id));
+/** Atomically add or update several records within one IndexedDB transaction. */
+export async function putMany(name,values) {
+  if(!values?.length)return;
+  const db=await openDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(name,'readwrite');
+    const target=tx.objectStore(name);
+    for(const value of values)target.put(value);
+    tx.oncomplete=()=>resolve();
+    tx.onerror=()=>reject(tx.error||new Error('Batch save failed'));
+    tx.onabort=()=>reject(tx.error||new Error('Batch save cancelled'));
+  });
+}
 export async function replaceAll(name, values) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
