@@ -48,6 +48,9 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Minimal one-row rest timer above the exercise sets: enter a duration in minutes (for example, 3 or 1.5), tap Start, and see the countdown with a Stop/Reset control. The timer does not record rest periods and can beep only while the web app is active.
 - Rest countdowns and per-exercise preferences use localStorage, not workout records; timer values are not recorded in history or exports
 - The timer uses the actual end timestamp, so it resumes showing the correct time after switching apps or locking the device. Web audio and notifications are not guaranteed while the page is suspended or closed.
+- Each expanded exercise card prioritizes the rest timer, previous-performance toggle, set inputs and Add Set; an optional More disclosure contains the exercise name, technique, exercise notes, target muscle tags and Remove Exercise action
+- Every saved exercise can be assigned one primary target muscle and multiple optional secondary muscle tags. Tag assignments are stored against the permanent exercise ID and can be edited from the workout card
+- Progress includes a collapsed Weekly muscle sets view with current and previous Monday–Sunday counts. One set with recorded repetitions greater than zero counts toward its primary muscle only, even when secondary tags are present. Warm-up sets are included until explicitly distinguished. This is NOT weight-times-repetitions volume load
 - Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
 - Create sets independently per exercise; quick exercise-only logging is valid
 - Standard sets are the active format; other technique formats are deferred until designed
@@ -59,6 +62,8 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 
 
 ## Progress page
+Muscle tags on a saved exercise classify past and future workouts consistently. Changing a primary muscle tag reclassifies the exercise's historical set counts. The weekly report excludes unassigned exercises and sets without recorded repetitions, while secondary muscle tags remain descriptive only. No volume-load metric is added.
+
 Exercise Analytics lets you choose a saved exercise and chart the highest recorded weight, highest repetitions, or average set RPE in each completed workout. You can select a rolling date range, filter repetition trends at a specific recorded weight, and expand dated workout entries to inspect individual sets. Missing values are excluded from calculations; there is no volume-load metric or automatic progressive-overload prescription.
 
 Progress Photos are dated Front/Side/Back photos saved as compressed JPEGs in a separate local IndexedDB store. The Progress page provides a collapsed add-photo form, a saved-photo gallery, and same-view side-by-side or adjustable overlay comparisons. All photos remain local to the current device unless the user deliberately exports them. Standard workout CSV, JSON, and PDF exports do **not** include photos. Settings has a separate explicit **Download backup including photos** action; photo backups can be large and must be protected like personal files. Restoring an older workout-only backup does not erase photos. Uninstalling the app or clearing website storage can permanently erase locally stored photos.
