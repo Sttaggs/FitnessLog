@@ -153,9 +153,9 @@ function renderWeeklyMuscleSets({state,e,inline=false}) {
   rows.map(row=>'<div class="muscle-week-row"><span>'+e(row.muscle)+'</span><strong>'+row.current+'</strong><span>'+row.previous+'</span></div>').join('')+'</div>':
   '<p class="helper">No sets with recorded repetitions were assigned to muscle groups in either week.</p>';
  return (inline?'<section class="card muscle-week-overview"><h2>Weekly muscle sets</h2>':'<details class="card muscle-week-overview"><summary>Weekly muscle sets <span class="helper">Optional</span></summary>')+
-  '<p class="helper">Weekly totals use Monday–Sunday calendar weeks. Each set with recorded repetitions greater than zero counts once toward its exercise’s primary muscle. Secondary tags are not counted. Mark warm-up sets in the workout More menu to exclude them; older unmarked sets are treated as working sets.</p>'+
+  '<p class="helper">Weekly totals use Monday–Sunday calendar weeks. Each set with recorded repetitions greater than zero counts once toward its exercise’s assigned muscle group. Mark warm-up sets in the workout More menu to exclude them; older unmarked sets are treated as working sets.</p>'+
   table+
-  '<p class="helper">Changing an exercise’s primary muscle also updates the classification of its historical sets. These are set counts, not weight × reps volume.</p>'+(inline?'</section>':'</details>');
+  '<p class="helper">Changing an exercise’s muscle group also updates the classification of its historical sets. These are set counts, not weight × reps volume.</p>'+(inline?'</section>':'</details>');
 }
 function renderWorkoutOverview({state,e}) {
  const completed=state.sessions.filter(s=>s.status==='finished');

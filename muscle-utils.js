@@ -1,5 +1,5 @@
-// An exercise has one primary muscle for set-count attribution; secondary tags
-// describe involvement without multiplying recorded sets across muscle groups.
+// Each saved exercise has one primary muscle for weekly set attribution.
+// Historical secondary tag arrays are obsolete and are removed during migration.
 export const MUSCLE_GROUPS=[
  'Chest','Back','Shoulders','Biceps','Triceps','Quadriceps','Hamstrings',
  'Glutes','Calves','Core','Forearms','Traps','Other'
@@ -22,21 +22,18 @@ export function muscleLabel(value){
 export function exercisePrimaryMuscle(exercise){
  return muscleLabel(exercise?.muscle);
 }
-export function exerciseSecondaryMuscles(exercise){
- const primary=exercisePrimaryMuscle(exercise);
- const unique=new Set();
- for(const item of (Array.isArray(exercise?.secondaryMuscles)?exercise.secondaryMuscles:[])){
-  const label=muscleLabel(item);
-  if(label&&label!==primary)unique.add(label);
- }
- return [...unique];
+// Drop the discontinued field without changing any recorded training data or
+// the exercise's permanent ID, category, primary muscle or progression target.
+export function singleMuscleExercise(exercise){
+ const record={...exercise};
+ delete record.secondaryMuscles;
+ return record;
 }
 export function muscleChoices(exercises){
  const choices=new Set(MUSCLE_GROUPS);
  for(const exercise of exercises||[]){
   const primary=exercisePrimaryMuscle(exercise);
   if(primary)choices.add(primary);
-  for(const secondary of exerciseSecondaryMuscles(exercise))choices.add(secondary);
  }
  return [...choices];
 }

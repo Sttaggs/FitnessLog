@@ -159,7 +159,7 @@
 .rest-tiny-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 
-/* Active exercise card: editing and muscle tags are secondary to logging sets. */
+/* Active exercise card: exercise settings remain below logging controls. */
 .exercise-add-set{margin-top:12px}
 .exercise-more{margin-top:13px;border-top:1px solid var(--border)}
 .detail .exercise-more>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px;font-weight:700;min-height:39px;padding:9px 2px;cursor:pointer}
@@ -170,12 +170,6 @@
 .exercise-muscle-controls{display:grid;gap:10px}
 .exercise-muscle-controls .field{font-size:12px;color:var(--muted);font-weight:700}
 .exercise-muscle-controls select{margin-top:6px}
-.exercise-secondary-tags{background:var(--surface);border:1px solid var(--border);border-radius:10px}
-.detail .exercise-secondary-tags>summary{cursor:pointer;padding:11px;color:var(--muted);font-size:12px;line-height:1.45}
-.muscle-tag-grid{display:flex;flex-wrap:wrap;gap:6px;padding:0 10px 10px}
-.muscle-tag{display:inline-flex;gap:5px;align-items:center;cursor:pointer;border:1px solid var(--border);background:var(--surface2);padding:7px 8px;border-radius:8px;font-size:11px;color:var(--text);margin:0;font-weight:500}
-.muscle-tag input[type=checkbox]{width:16px;height:16px;min-height:16px;margin:0;flex:0 0 16px}
-.exercise-secondary-tags .helper{padding:0 11px 8px;margin:0}
 .exercise-remove-row{border-top:1px solid var(--border);padding-top:12px;margin-top:2px}
 .muscle-week-overview{margin:12px 0 25px}
 .muscle-week-overview>summary{display:flex;align-items:center;justify-content:space-between;min-height:40px;cursor:pointer;font-weight:700}

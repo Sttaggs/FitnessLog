@@ -1,7 +1,7 @@
 // Built-in exercise suggestions provided by the FitnessLog owner.
 // Names remain editable/user-extensible through the existing exercise library.
-// Two categories intentionally contain "Close-grip bench press": it is stored once
-// with Chest as primary muscle and Triceps as an optional secondary tag.
+// "Close-grip bench press" appears in two supplied groups but is stored once
+// with Chest as its sole primary muscle.
 export const CATALOG_GROUPS=[
  {
   category:'Chest',muscle:'Chest',names:[
@@ -84,21 +84,16 @@ export const CATALOG_CATEGORIES=CATALOG_GROUPS.map(group=>group.category);
 
 // These targeted adjustments are editable after the catalog has been installed.
 const variants={
- 'Glute-focused lunge':{muscle:'Glutes',secondaryMuscles:['Quadriceps']},
- 'Cable shrug':{muscle:'Traps',secondaryMuscles:['Back']},
- 'Cable trap raise':{muscle:'Traps',secondaryMuscles:['Back']},
- 'Lower trapezius raise':{muscle:'Traps',secondaryMuscles:['Back']},
- 'Romanian deadlift (RDL)':{secondaryMuscles:['Glutes']},
- 'Single-leg deadlift':{secondaryMuscles:['Glutes']},
- 'Stiff-leg deadlift':{secondaryMuscles:['Glutes']},
- 'Glute-ham raise':{secondaryMuscles:['Glutes']},
+ 'Glute-focused lunge':{muscle:'Glutes'},
+ 'Cable shrug':{muscle:'Traps'},
+ 'Cable trap raise':{muscle:'Traps'},
+ 'Lower trapezius raise':{muscle:'Traps'},
  'Barbell hip thrust':{muscle:'Glutes'},
  'Machine hip thrust':{muscle:'Glutes'},
  'Glute bridge':{muscle:'Glutes'},
  'Low squat hip opener':{muscle:''},
  'Gentle spinal rotation':{muscle:''},
- 'Scapular push-up':{muscle:'Shoulders'},
- 'Dips':{secondaryMuscles:['Triceps']}
+ 'Scapular push-up':{muscle:'Shoulders'}
 };
 export function normalizeCatalogName(value){
  return String(value||'').normalize('NFKC').toLocaleLowerCase()
@@ -109,18 +104,11 @@ function catalogItems(){
  for(const group of CATALOG_GROUPS){
   for(const name of group.names){
    const key=normalizeCatalogName(name);
-   if(unique.has(key)){
-    const prior=unique.get(key);
-    if(group.muscle && group.muscle!==prior.muscle &&
-       !prior.secondaryMuscles.includes(group.muscle)){
-      prior.secondaryMuscles.push(group.muscle);
-    }
-    continue;
-   }
+   // The first group owns the category and single primary muscle.
+   if(unique.has(key))continue;
    const variant=variants[name]||{};
    unique.set(key,{
-    name,category:group.category,muscle:variant.muscle??group.muscle,
-    secondaryMuscles:[...(variant.secondaryMuscles||[])]
+    name,category:group.category,muscle:variant.muscle??group.muscle
    });
   }
  }
@@ -131,7 +119,7 @@ export const CATALOG_EXERCISES=catalogItems();
 /**
  * Generate only missing records, optionally enriching previously saved records
  * that have no category/muscle. Never replace an existing ID, training target,
- * user-assigned primary muscle, notes, or already defined secondary tag array.
+ * user-assigned primary muscle or notes. Discontinued secondary tags are removed.
  * Run once per catalog release, not on every launch, so user deletions persist.
  */
 export function planCatalogInstall(existing,createId,createdAt){
@@ -142,7 +130,6 @@ export function planCatalogInstall(existing,createId,createdAt){
   if(!match){
    toInsert.push({
     id:createId(),name:item.name,muscle:item.muscle,
-    secondaryMuscles:[...item.secondaryMuscles],
     category:item.category,equipment:'',createdAt,origin:'starter-catalog'
    });
    continue;
@@ -157,8 +144,8 @@ export function planCatalogInstall(existing,createId,createdAt){
    updated.muscle=item.muscle;
    changed=true;
   }
-  if(!Array.isArray(updated.secondaryMuscles)&&item.secondaryMuscles.length){
-   updated.secondaryMuscles=item.secondaryMuscles.filter(m=>m!==updated.muscle);
+  if(Object.prototype.hasOwnProperty.call(updated,'secondaryMuscles')){
+   delete updated.secondaryMuscles;
    changed=true;
   }
   if(changed)toUpdate.push(updated);

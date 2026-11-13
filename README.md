@@ -41,7 +41,7 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Delete a workout from the bottom of its editor, with confirmation
 - Create, resume, edit, and delete workout sessions
 - Add exercises in one step; new names are automatically saved and linked to their previous and future workout records
-- On first launch after this update, a built-in starter catalog adds the owner's 106 supplied exercise entries as 105 distinct saved exercises. Close-grip bench press appeared under both Chest and Triceps and is stored only once, with Chest primary and Triceps secondary.
+- On first launch after this update, a built-in starter catalog adds the owner's 106 supplied exercise entries as 105 distinct saved exercises. Close-grip bench press appeared under both Chest and Triceps and is stored only once, with Chest as its single assigned muscle group.
 - Starter catalog groups: Chest, Shoulders, Back, Biceps, Triceps, Quadriceps, Hamstrings and Glutes, Core and Mobility, and Cardio and Conditioning. Built-in categories are editable descriptions, not a rigid training program. Cardio and mobility activities are not assigned muscle-set volume unless given a primary muscle.
 - Exercise library has collapsible categories and a quick search by exercise name or muscle, while the existing live exercise search and the ability to enter unlimited new exercises remain unchanged.
 - Starter entries are installed only once per device, avoid exact-name duplicates, and preserve existing exercise IDs, historical data and user-entered muscle/target information. The catalog does not create workout sessions. An intentionally removed starter entry is not recreated on every subsequent app launch.
@@ -56,8 +56,8 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Minimal one-row rest timer above the exercise sets: enter a duration in minutes (for example, 3 or 1.5), tap Start, and see the countdown with a Stop/Reset control. The timer does not record rest periods and can beep only while the web app is active.
 - Rest countdowns and per-exercise preferences use localStorage, not workout records; timer values are not recorded in history or exports
 - The timer uses the actual end timestamp, so it resumes showing the correct time after switching apps or locking the device. Web audio and notifications are not guaranteed while the page is suspended or closed.
-- Each expanded exercise card prioritizes the rest timer, previous-performance toggle, set inputs and Add Set; an optional More disclosure contains the exercise name, technique, exercise notes, target muscle tags and Remove Exercise action
-- Every saved exercise can be assigned one primary target muscle and multiple optional secondary muscle tags. Tag assignments are stored against the permanent exercise ID and can be edited from the workout card
+- Each expanded exercise card prioritizes the rest timer, previous-performance toggle, set inputs and Add Set; an optional More disclosure contains the exercise name, technique, exercise notes, muscle group and Remove Exercise action
+- Every saved exercise has at most one assigned muscle group, editable under More. The group is stored against the permanent exercise ID and determines its weekly set attribution. Secondary muscle tags have been retired
 - Progress now has Exercises, Muscles, and Photos sections. Exercises starts with a clear strength-trend status and a short optional next-session suggestion; detailed comparisons and recorded sessions are collapsed by default. Muscles shows weekly working-set counts by primary muscle, excluding sets explicitly marked as warm-ups. No weight-times-repetitions volume load is calculated
 - Optional exercise progression targets (working sets, reps, weight increment and RPE ceiling) can be edited in More or Progress. Targets are suggestions, never auto-entered workout results
 - Warm-up sets can be marked in More, without adding controls to the main set-logging table. Marked warm-ups are excluded from strength trends, target assessments and weekly muscle counts; older unmarked sets retain their original meaning
@@ -75,6 +75,8 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 
 The initial built-in catalog comes from the owner's supplied list and is imported directly into this device's IndexedDB. No workout or exercise data is transmitted to GitHub or Cloudflare. The install is non-destructive: existing saved exercises with matching normalized names retain their IDs, history and individually configured preferences. Previously blank primary-muscle labels may be initialized from the supplied categories on the first install; populated labels are preserved. The same name in multiple sections is represented once, not as two disconnected histories.
 
+The update to single-muscle tracking removes discontinued secondary muscle tags from existing library records on device startup and from restored backups. Exercise IDs, primary muscle assignments, progression targets, workout history, and custom exercise creation remain intact.
+
 The catalog is a starting point, not a restriction: you can continue creating custom exercises by typing new names during a workout or in the Library. The Library displays the catalog in collapsed, searchable categories rather than one long list. Restoring an older backup later replaces the saved library according to the backup's contents; the starter import does not automatically re-add intentionally deleted items at every page load.
 
 ## Progress page
@@ -89,7 +91,7 @@ The progression label compares the **median of the latest three eligible session
 
 **Other comparisons**, inside a collapsed disclosure, show the highest repetitions recorded at a fixed weight or the highest load performed for at least a selected number of repetitions. **Recorded sessions** is also collapsed by default and shows the underlying sets. RPE is only compared when both weight and reps match; it is not averaged across dissimilar performances. There is no volume-load metric.
 
-In **Muscles**, only sets with recorded repetitions above zero and a known primary muscle count toward weekly totals. Secondary tags are descriptive and do not double-count. Marked warm-ups are excluded; older unmarked sets are treated as working sets. Exercise-library tag changes reclassify linked history. The workout overview remains collapsed.
+In **Muscles**, only sets with recorded repetitions above zero and one assigned muscle group count toward weekly totals. Each qualifying set is counted once. Marked warm-ups are excluded; older unmarked sets are treated as working sets. Exercise-library tag changes reclassify linked history. The workout overview remains collapsed.
 
 Progress Photos are dated Front/Side/Back photos saved as compressed JPEGs in a separate local IndexedDB store. The Progress page provides a collapsed add-photo form, a saved-photo gallery, and same-view side-by-side or adjustable overlay comparisons. All photos remain local to the current device unless the user deliberately exports them. Standard workout CSV, JSON, and PDF exports do **not** include photos. Settings has a separate explicit **Download backup including photos** action; photo backups can be large and must be protected like personal files. Restoring an older workout-only backup does not erase photos. Uninstalling the app or clearing website storage can permanently erase locally stored photos.
 

@@ -49,9 +49,9 @@ test('explicit warmup marking keeps warmups out of advice, trends and muscle tot
  assert.equal(nextSessionAdvice(workout,target).kind,'increase');
  assert.equal(strengthSessions([workout])[0].weight,135);
  const sessions=[{status:'finished',date:'2026-11-12',exercises:[{exerciseId:'bench',sets:workout.sets}]}];
- const summary=muscleSetSummary(sessions,[{id:'bench',muscle:'Chest',secondaryMuscles:['Triceps']}],new Date('2026-11-13T12:00:00'));
+ const summary=muscleSetSummary(sessions,[{id:'bench',muscle:'Chest'}],new Date('2026-11-13T12:00:00'));
  assert.equal(summary.rows.find(r=>r.muscle==='Chest')?.current,2);
- assert.equal(summary.rows.some(r=>r.muscle==='Triceps'),false);
+ assert.equal(summary.rows.length,1);
 });
 test('RPE 10 without a ceiling still prevents an unqualified weight increase',()=>{
  const advice=nextSessionAdvice(record('2026-11-01',[set(135,5,10),set(135,5,9)]),
