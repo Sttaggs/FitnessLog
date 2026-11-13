@@ -21,6 +21,8 @@ python3 -m http.server 8000
 
 Visit http://localhost:8000.
 
+Run the dependency-free progression regression tests with `npm test` (Node 20+). No build step or external packages are needed.
+
 ## Cloudflare Workers deployment
 The repository includes a `wrangler.jsonc` file configuring the existing Worker named `fitnesslog` and serving the repository's static application assets. No framework or build step is needed.
 
@@ -50,7 +52,9 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - The timer uses the actual end timestamp, so it resumes showing the correct time after switching apps or locking the device. Web audio and notifications are not guaranteed while the page is suspended or closed.
 - Each expanded exercise card prioritizes the rest timer, previous-performance toggle, set inputs and Add Set; an optional More disclosure contains the exercise name, technique, exercise notes, target muscle tags and Remove Exercise action
 - Every saved exercise can be assigned one primary target muscle and multiple optional secondary muscle tags. Tag assignments are stored against the permanent exercise ID and can be edited from the workout card
-- Progress includes a collapsed Weekly muscle sets view with current and previous Monday–Sunday counts. One set with recorded repetitions greater than zero counts toward its primary muscle only, even when secondary tags are present. Warm-up sets are included until explicitly distinguished. This is NOT weight-times-repetitions volume load
+- Progress now has Exercises, Muscles, and Photos sections. Exercises starts with a clear strength-trend status and a short optional next-session suggestion; detailed comparisons and recorded sessions are collapsed by default. Muscles shows weekly working-set counts by primary muscle, excluding sets explicitly marked as warm-ups. No weight-times-repetitions volume load is calculated
+- Optional exercise progression targets (working sets, reps, weight increment and RPE ceiling) can be edited in More or Progress. Targets are suggestions, never auto-entered workout results
+- Warm-up sets can be marked in More, without adding controls to the main set-logging table. Marked warm-ups are excluded from strength trends, target assessments and weekly muscle counts; older unmarked sets retain their original meaning
 - Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
 - Create sets independently per exercise; quick exercise-only logging is valid
 - Standard sets are the active format; other technique formats are deferred until designed
@@ -62,9 +66,18 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 
 
 ## Progress page
-Muscle tags on a saved exercise classify past and future workouts consistently. Changing a primary muscle tag reclassifies the exercise's historical set counts. The weekly report excludes unassigned exercises and sets without recorded repetitions, while secondary muscle tags remain descriptive only. No volume-load metric is added.
 
-Exercise Analytics lets you choose a saved exercise and chart the highest recorded weight, highest repetitions, or average set RPE in each completed workout. You can select a rolling date range, filter repetition trends at a specific recorded weight, and expand dated workout entries to inspect individual sets. Missing values are excluded from calculations; there is no volume-load metric or automatic progressive-overload prescription.
+Progress is divided into **Exercises**, **Muscles** and **Photos** to avoid stacking unrelated reports. Exercise Analytics is the default and sorts recently used exercises first.
+
+**Progression analysis:** Epley estimated 1RM uses weight and 1–10 repetitions from individual recorded, non-warm-up sets, with a single repetition treated as the actual lifted load. RPE is *not* included in the formula. The app chooses the highest eligible estimate per completed session; incomplete sets are omitted individually. Estimates are approximations, especially for sets performed far from failure, and should not be treated as verified maximal strength.
+
+The progression label compares the **median of the latest three eligible sessions** against the preceding three. Greater than +3% is displayed as **Progressing**, below −3% as **Possible regression**, and values in between as **Holding steady**. Before six eligible sessions the status is **Building baseline**, with a factual latest-versus-previous comparison once available. The ±3% threshold is a pragmatic product heuristic, not a universal physiological significance test. A single low result is not called regression.
+
+**Next-session suggestion:** Each exercise may optionally have working-set, repetition, and weight-increment targets, plus an RPE ceiling. When the most recent completed session has exactly the target number of measured working sets at the same weight and all target repetitions are achieved, the app may suggest a load increase. Missing data, mixed weights, RPE above a configured ceiling, or an observed RPE of 10 prevent an unqualified increase. Shortfalls yield a **Build repetitions** recommendation. Users always decide the actual load; nothing is filled in automatically. Without targets, no prescription is inferred.
+
+**Other comparisons**, inside a collapsed disclosure, show the highest repetitions recorded at a fixed weight or the highest load performed for at least a selected number of repetitions. **Recorded sessions** is also collapsed by default and shows the underlying sets. RPE is only compared when both weight and reps match; it is not averaged across dissimilar performances. There is no volume-load metric.
+
+In **Muscles**, only sets with recorded repetitions above zero and a known primary muscle count toward weekly totals. Secondary tags are descriptive and do not double-count. Marked warm-ups are excluded; older unmarked sets are treated as working sets. Exercise-library tag changes reclassify linked history. The workout overview remains collapsed.
 
 Progress Photos are dated Front/Side/Back photos saved as compressed JPEGs in a separate local IndexedDB store. The Progress page provides a collapsed add-photo form, a saved-photo gallery, and same-view side-by-side or adjustable overlay comparisons. All photos remain local to the current device unless the user deliberately exports them. Standard workout CSV, JSON, and PDF exports do **not** include photos. Settings has a separate explicit **Download backup including photos** action; photo backups can be large and must be protected like personal files. Restoring an older workout-only backup does not erase photos. Uninstalling the app or clearing website storage can permanently erase locally stored photos.
 
@@ -72,8 +85,8 @@ Progress Photos are dated Front/Side/Back photos saved as compressed JPEGs in a 
 - Structured superset groups and advanced nested techniques
 - Per-set exercise UI refinements and inline timers
 - Dedicated body-measurement module and more advanced progress-photo alignment tools
-- Expanded training analytics and tracking rotation
+- Optional deeper trends and tracking rotation
 - Media-inclusive backup with integrity verification
-- Automated tests and accessibility audit
+- Expanded mobile-device accessibility audit and backup-integrity testing
 
 See the app for its current functionality. Do not assume planned features are already implemented.

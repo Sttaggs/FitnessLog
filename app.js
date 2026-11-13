@@ -14,7 +14,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -201,7 +201,7 @@ function photoUrl(photo) {
 }
 async function render() {
  await refreshData();
- if(state.tab==='progress' && !state.session && !state.report && !state.photosLoaded)await refreshPhotos();
+ if(state.tab==='progress' && state.progressSection==='photos' && !state.session && !state.report && !state.photosLoaded)await refreshPhotos();
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
  title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings'})[state.tab]||'FitnessLog';
  main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings}[state.tab]||renderHome)();
@@ -326,6 +326,21 @@ function muscleOptions(selected){
  return '<option value="">Unassigned</option>'+candidates.map(muscle=>
   '<option value="'+e(muscle)+'" '+(selected===muscle?'selected':'')+'>'+e(muscle)+'</option>').join('');
 }
+function renderProgressionTarget(master,compact=false){
+ const target=master?.progressTarget||{};
+ const label=(field,label,value,min,max,step='1')=>
+  '<label class="field">'+label+
+  '<input type="number" inputmode="decimal" min="'+min+'" max="'+max+'" step="'+step+
+  '" data-progress-target="'+e(master.id)+'" data-target-field="'+field+'" value="'+e(value??'')+'" placeholder="—"></label>';
+ return '<div class="progress-target-grid">'+
+  label('sets','Working sets',target.sets,1,12)+
+  label('reps','Reps per set',target.reps,1,30)+
+  label('increment','Add weight (lb)',target.increment,0.5,50,'any')+
+  label('rpeCeiling','RPE ceiling (optional)',target.rpeCeiling,1,10,'0.5')+
+ '</div>'+
+ (compact?'<p class="helper">Targets only guide suggestions. Logged sets remain unchanged.</p>':
+  '<p class="helper">When all targeted working sets reach the rep goal at the same weight, a load increase may be suggested. RPE is optional.</p>');
+}
 function renderExerciseMore(x,scope,type){
  const master=state.exercises.find(ex=>ex.id===x.exerciseId);
  const primary=exercisePrimaryMuscle(master);
@@ -347,6 +362,13 @@ function renderExerciseMore(x,scope,type){
      '<label class="muscle-tag"><input type="checkbox" data-muscle-secondary="'+e(master.id)+'" value="'+e(muscle)+'" '+(secondary.includes(muscle)?'checked':'')+'><span>'+e(muscle)+'</span></label>').join('')+'</div>'+
    '<p class="helper">Only primary muscle sets count in the weekly totals. Secondary tags describe additional involvement.</p></details>'+
   '</div>':'<p class="helper">Muscle tags require a linked library exercise.</p>')+
+  (master?'<details class="exercise-secondary-config"><summary>Progression target (optional)</summary>'+
+    '<div class="exercise-secondary-config-body">'+renderProgressionTarget(master,true)+'</div></details>':'')+
+  '<details class="exercise-secondary-config"><summary>Mark warm-up sets (optional)</summary>'+
+   '<div class="exercise-warmup-list">'+(x.sets||[]).map((set,j)=>
+    '<label class="exercise-warmup-row"><input type="checkbox" data-warmup-entry="'+e(x.id)+'" data-warmup-set="'+e(set.id)+'" '+(set.warmup===true?'checked':'')+'>'+
+    '<span>Set '+(j+1)+' · '+e(set.weight||'—')+' lb × '+e(set.reps||'—')+' reps</span></label>').join('')+
+   '</div><p class="helper">Marked warm-ups are excluded from strength estimates and target checks.</p></details>'+
   memoField('Exercise notes',scope,'notes',x.notes||'')+
   '<div class="exercise-remove-row"><button type="button" class="btn danger small" data-action="delete-exercise" data-id="'+e(x.id)+'">Remove exercise</button></div>'+
   '</div></details>';
@@ -612,6 +634,13 @@ async function action(name,el) {
  if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
  if(name==='close-workout'){await flushSave();state.session=null;state.moreOpen.clear();state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
+ if(name==='progress-section'){
+  if(['exercises','muscles','photos'].includes(el.dataset.section)){
+   state.progressSection=el.dataset.section;
+   await render();
+  }
+  return;
+ }
  if(name==='progress-metric'){
   if(['weight','reps','rpe'].includes(el.dataset.metric)){
    state.progressMetric=el.dataset.metric;
@@ -818,6 +847,13 @@ document.addEventListener('input',ev=>{
 document.addEventListener('toggle',ev=>{
  const card=ev.target;
  if(!document.contains(card))return;
+ if(card.matches?.('[data-progress-comparison]')){state.progressCompareOpen=card.open;return;}
+ if(card.matches?.('[data-progress-target-editor]')){
+  const wasOpen=state.progressTargetOpen;
+  state.progressTargetOpen=card.open;
+  if(wasOpen&&!card.open&&state.tab==='progress'&&!state.session)render().catch(console.error);
+  return;
+ }
  if(card.matches?.('[data-exercise-more]')){
   if(card.open)state.moreOpen.add(card.dataset.exerciseMore);
   else state.moreOpen.delete(card.dataset.exerciseMore);
@@ -828,6 +864,39 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(ev.target.dataset?.progressTarget){
+  const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.progressTarget);
+  if(!ex)return;
+  const field=ev.target.dataset.targetField,limits={
+   sets:[1,12,true],reps:[1,30,true],increment:[0.5,50,false],rpeCeiling:[1,10,false]
+  };
+  const constraint=limits[field];
+  if(!constraint)return;
+  const raw=ev.target.value.trim();
+  if(raw!==''){
+   const numeric=Number(raw);
+   if(!Number.isFinite(numeric)||numeric<constraint[0]||numeric>constraint[1]||
+      (constraint[2]&&!Number.isInteger(numeric))||
+      (field==='rpeCeiling'&&numeric*2!==Math.round(numeric*2))){
+    toast('Enter a valid target or leave the field blank');
+    ev.target.value=ex.progressTarget?.[field]??'';
+    return;
+   }
+  }
+  ex.progressTarget={...(ex.progressTarget||{}),[field]:raw===''?'':Number(raw)};
+  try{await put('exercises',ex);}catch(err){console.error(err);toast('Could not save target');return;}
+  // Do not remove the focused field while editing multiple targets on iPhone.
+  // The summary refreshes when the optional editor is closed.
+  return;
+ }
+ if(ev.target.dataset?.warmupEntry){
+  const entry=state.session?.exercises?.find(x=>x.id===ev.target.dataset.warmupEntry);
+  const set=entry?.sets?.find(s=>s.id===ev.target.dataset.warmupSet);
+  if(!set)return;
+  set.warmup=ev.target.checked;
+  scheduleSave();
+  return;
+ }
  if(ev.target.dataset?.musclePrimary){
   const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.musclePrimary);
   if(!ex)return;
@@ -871,6 +940,8 @@ document.addEventListener('change',async ev=>{
   if(progress==='exercise'){state.progressExercise=value;state.progressWeight='all';}
   else if(progress==='range'&&['30','90','365','all'].includes(value))state.progressRange=value;
   else if(progress==='weightFilter')state.progressWeight=value;
+   else if(progress==='compareType'&&['repsAtWeight','weightAtReps'].includes(value))state.progressCompareType=value;
+   else if(progress==='repTarget'&&Number.isInteger(Number(value))&&Number(value)>=1&&Number(value)<=30)state.progressRepTarget=value;
   else if(progress==='photoView'){state.photoView=value;state.photoA='';state.photoB='';}
   else if(progress==='photoA')state.photoA=value;
   else if(progress==='photoB')state.photoB=value;
