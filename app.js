@@ -4,6 +4,7 @@ import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
 import {ADVANCED_TYPES,isAdvancedSet,setTechnique,techniqueLabel,newAdvancedSet,setTechniqueOnExisting,hasRecordedStages,MAX_STAGES,linkSuperset,removeSuperset,cleanSupersets,normalizeSetPlan,templatePlanForSet} from './advanced-utils.js';
 import {renderAdvancedSetPanel,renderAdvancedTools,renderSupersetSettings,supersetLabel} from './advanced-ui.js';
+import {renderTemplateExerciseRow} from './template-advanced-ui.js';
 import {templateFromWorkout,templateToEntries,sanitizedTemplate,validSetCount,cleanTemplateName,templateSummary,MAX_TEMPLATE_EXERCISES} from './template-utils.js';
 import {CATALOG_CATEGORIES,planCatalogInstall} from './exercise-catalog.js';
 import {muscleChoices,muscleLabel,exercisePrimaryMuscle,singleMuscleExercise} from './muscle-utils.js';
@@ -623,12 +624,7 @@ function renderTemplateEditor(){
  if(!template)return '<div class="card">No template is open.</div>';
  const count=template.exercises?.length||0;
  const exerciseRows=(template.exercises||[]).map((entry,index)=>
-  '<div class="item template-editor-row"><div class="template-editor-row-head"><strong>'+e(entry.name)+'</strong>'+
-   '<button type="button" class="btn ghost small" data-action="template-remove-exercise" data-index="'+index+'" aria-label="Remove '+e(entry.name)+'">Remove</button></div>'+
-   '<div class="template-editor-row-bottom"><label>Sets<input type="number" inputmode="numeric" min="1" max="20" step="1" data-template-sets="'+index+'" value="'+e(entry.sets)+'" aria-label="Number of sets for '+e(entry.name)+'"></label>'+
-   '<div class="template-order-buttons"><button type="button" class="btn secondary small" data-action="template-move-up" data-index="'+index+'" aria-label="Move '+e(entry.name)+' earlier" '+(index===0?'disabled':'')+'>↑</button>'+
-   '<button type="button" class="btn secondary small" data-action="template-move-down" data-index="'+index+'" aria-label="Move '+e(entry.name)+' later" '+(index===count-1?'disabled':'')+'>↓</button></div></div></div>'
- ).join('');
+  renderTemplateExerciseRow(entry,index,template,e,state.templateAdvancedOpen.has(index))).join('');
  const search='<form data-form="template-add-exercise" class="template-add-exercise"><div class="field exercise-search-field template-search-field">'+
   '<label for="template-exercise-name">Add an exercise</label>'+
   '<input id="template-exercise-name" name="exerciseName" placeholder="Search or type a new exercise" required autocomplete="off" spellcheck="false" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="template-search-options" aria-expanded="false">'+
@@ -637,7 +633,7 @@ function renderTemplateEditor(){
  return '<button type="button" class="btn ghost small" data-action="templates-back">← Templates</button>'+
   '<div class="card template-editor-heading"><h2>'+e(template.createdAt&&state.templates.some(x=>x.id===template.id)?'Edit template':'New template')+'</h2>'+
    '<label class="field" for="template-name">Template name<input id="template-name" type="text" maxlength="100" value="'+e(template.name)+'" placeholder="e.g. Push day"></label>'+
-   '<p class="helper">Only exercise order and set counts are saved. Creating a template does not log a workout.</p></div>'+
+   '<p class="helper">Exercise order, set counts, optional techniques and superset links are saved. No workout is logged.</p></div>'+
   '<div class="section-heading"><h2>Exercises</h2><span class="pill">'+count+'</span></div>'+
   (exerciseRows||'<div class="card empty">No exercises yet. Add one below.</div>')+
   (count<MAX_TEMPLATE_EXERCISES?'<div class="card">'+search+'</div>':'<p class="helper">Template exercise limit reached.</p>')+
@@ -829,13 +825,13 @@ async function action(name,el) {
  if(name==='new-template'){
   const now=new Date().toISOString();
   state.templateDraft={id:newId(),name:'New template',createdAt:now,updatedAt:now,exercises:[]};
-  state.templateDirty=false;state.tab='template-editor';return render();
+  state.templateDirty=false;state.templateAdvancedOpen.clear();state.tab='template-editor';return render();
  }
  if(name==='edit-template'){
   const source=state.templates.find(x=>x.id===el.dataset.id);
   if(!source)return;
   state.templateDraft=sanitizedTemplate(source);
-  state.templateDirty=false;state.tab='template-editor';return render();
+  state.templateDirty=false;state.templateAdvancedOpen.clear();state.tab='template-editor';return render();
  }
  if(name==='templates-back'){
   if(state.templateDirty&&!confirm('Discard unsaved template changes?'))return;
@@ -850,7 +846,8 @@ async function action(name,el) {
   if(!state.templateDraft)return;
   const index=Number(el.dataset.index);
   if(index>=0&&index<state.templateDraft.exercises.length){
-   state.templateDraft.exercises.splice(index,1);state.templateDirty=true;await render();
+   removeSuperset(state.templateDraft.exercises,index);
+   state.templateDraft.exercises.splice(index,1);state.templateAdvancedOpen.clear();state.templateDirty=true;await render();
   }
   return;
  }
@@ -860,7 +857,7 @@ async function action(name,el) {
   const source=Number(el.dataset.index),dest=source+(name==='template-move-up'?-1:1);
   if(source>=0&&source<entries.length&&dest>=0&&dest<entries.length){
    [entries[source],entries[dest]]=[entries[dest],entries[source]];
-   state.templateDirty=true;await render();
+   state.templateAdvancedOpen.clear();state.templateDirty=true;await render();
   }
   return;
  }
@@ -1282,6 +1279,12 @@ document.addEventListener('toggle',ev=>{
   if(wasOpen&&!card.open&&state.tab==='progress'&&!state.session)render().catch(console.error);
   return;
  }
+ if(card.matches?.('[data-template-advanced]')){
+  const index=Number(card.dataset.templateAdvanced);
+  if(card.open)state.templateAdvancedOpen.add(index);
+  else state.templateAdvancedOpen.delete(index);
+  return;
+ }
  if(card.matches?.('[data-advanced-set]')){
   if(card.open)state.advancedOpen.add(card.dataset.advancedSet);
   else state.advancedOpen.delete(card.dataset.advancedSet);
@@ -1297,6 +1300,36 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(state.templateDraft&&ev.target.dataset?.templateTechnique!==undefined){
+  const index=Number(ev.target.dataset.templateTechnique),setIndex=Number(ev.target.dataset.setIndex);
+  const entry=state.templateDraft.exercises[index],type=ev.target.value;
+  if(!entry||!['standard',...ADVANCED_TYPES].includes(type)||setIndex<0||setIndex>=entry.sets)return;
+  const plans=Array.from({length:entry.sets},(_,j)=>normalizeSetPlan(entry.setPlans?.[j]));
+  plans[setIndex]={technique:type,stages:type==='standard'?0:2};
+  entry.setPlans=plans;state.templateDirty=true;state.templateAdvancedOpen.add(index);
+  await render();return;
+ }
+ if(state.templateDraft&&ev.target.dataset?.templateStageCount!==undefined){
+  const index=Number(ev.target.dataset.templateStageCount),setIndex=Number(ev.target.dataset.setIndex);
+  const entry=state.templateDraft.exercises[index],value=Number(ev.target.value);
+  if(!entry||setIndex<0||setIndex>=entry.sets)return;
+  if(!Number.isInteger(value)||value<1||value>MAX_STAGES){
+   toast('Extra stages must be between 1 and 12');
+   ev.target.value=normalizeSetPlan(entry.setPlans?.[setIndex]).stages||2;return;
+  }
+  const plans=Array.from({length:entry.sets},(_,j)=>normalizeSetPlan(entry.setPlans?.[j]));
+  plans[setIndex].stages=value;
+  entry.setPlans=plans;state.templateDirty=true;return;
+ }
+ if(state.templateDraft&&ev.target.dataset?.templatePartner!==undefined){
+  const entries=state.templateDraft.exercises,index=Number(ev.target.dataset.templatePartner);
+  if(index<0||index>=entries.length)return;
+  const partner=ev.target.value;
+  if(partner==='')removeSuperset(entries,index);
+  else if(!linkSuperset(entries,index,Number(partner),newId))return;
+  state.templateDirty=true;state.templateAdvancedOpen.add(index);
+  await render();return;
+ }
  if(ev.target.dataset?.templateSets!==undefined&&state.templateDraft){
   const index=Number(ev.target.dataset.templateSets),count=validSetCount(ev.target.value);
   if(!state.templateDraft.exercises[index])return;
@@ -1304,8 +1337,13 @@ document.addEventListener('change',async ev=>{
    toast('Enter a whole number from 1 to 20');
    ev.target.value=state.templateDraft.exercises[index].sets;
   }else{
-   state.templateDraft.exercises[index].sets=count;
-   state.templateDirty=true;
+   const entry=state.templateDraft.exercises[index];
+   entry.sets=count;
+   if(Array.isArray(entry.setPlans)){
+    entry.setPlans=Array.from({length:count},(_,j)=>normalizeSetPlan(entry.setPlans[j]));
+   }
+   state.templateDirty=true;state.templateAdvancedOpen.add(index);
+   await render();
   }
   return;
  }
