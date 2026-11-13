@@ -885,13 +885,21 @@ async function action(name,el) {
   await flushSave();
   const active=s||state.sessions.find(x=>x.status==='active');
   if(active&&name==='start-from-template'&&!confirm('Add this template to your unfinished workout?'))return;
+  // Reconnect stale template exercise IDs after library edits or old restores.
+  const source=sanitizedTemplate(template);
+  for(const item of source.exercises){
+   if(state.exercises.some(ex=>ex.id===item.exerciseId))continue;
+   const resolved=await ensureExercise(item.name);
+   if(resolved)item.exerciseId=resolved.id;
+  }
+  const newEntries=templateToEntries(source,state.exercises,newId);
   if(active){
    state.session=active;
-   state.session.exercises.push(...templateToEntries(template,state.exercises,newId));
+   state.session.exercises.push(...newEntries);
   }else{
    const now=new Date().toISOString();
    state.session={id:newId(),name:template.name,date:today(),status:'active',createdAt:now,intensity:'',fatigue:'',notes:'',
-    exercises:templateToEntries(template,state.exercises,newId),activities:[]};
+    exercises:newEntries,activities:[]};
   }
   state.expanded=new Set(state.session.exercises.slice(-1).map(x=>x.id));
   state.moreOpen.clear();state.previousOpenId=null;state.tab='home';state.justFinishedSessionId='';
