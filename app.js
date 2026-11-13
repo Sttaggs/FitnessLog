@@ -129,8 +129,8 @@ function closeProgressExerciseSuggestions(restoreSelected=true){
  if(input){
   input.setAttribute('aria-expanded','false');
   input.removeAttribute('aria-activedescendant');
-  // Restore the exercise whose analytics were displayed, even when
-  // the latest trained exercise was auto-selected rather than stored in state.
+  // Discard an unfinished search. The currently displayed exercise remains
+  // unchanged and is identified independently below the search box.
   if(restoreSelected)input.value=input.defaultValue;
  }
 }
@@ -913,10 +913,8 @@ document.addEventListener('input',ev=>{
 });
 document.addEventListener('focusin',ev=>{
  if(ev.target.id==='exercise-entry-name'&&ev.target.value.trim())renderExerciseSuggestions(ev.target);
- if(ev.target.id==='progress-exercise-search'){
-  ev.target.select();
-  if(ev.target.value.trim())renderProgressExerciseSuggestions(ev.target);
- }
+ if(ev.target.id==='progress-exercise-search'&&ev.target.value.trim())
+  renderProgressExerciseSuggestions(ev.target);
 });
 document.addEventListener('keydown',ev=>{
  if(ev.target.id!=='exercise-entry-name')return;
