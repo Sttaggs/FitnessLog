@@ -201,7 +201,7 @@ function photoUrl(photo) {
 }
 async function render() {
  await refreshData();
- if(state.tab==='progress' && !state.session && !state.report && !state.photosLoaded)await refreshPhotos();
+ if(state.tab==='progress' && state.progressSection==='photos' && !state.session && !state.report && !state.photosLoaded)await refreshPhotos();
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
  title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings'})[state.tab]||'FitnessLog';
  main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings}[state.tab]||renderHome)();
