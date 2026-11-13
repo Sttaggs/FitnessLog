@@ -135,6 +135,36 @@ function closeProgressExerciseSuggestions(restoreSelected=true){
   if(restoreSelected)input.value=input.defaultValue;
  }
 }
+function renderTemplateExerciseSuggestions(input,highlight=-1){
+ const list=document.getElementById('template-search-options');
+ if(!list)return;
+ const query=input.value.trim();
+ if(!query){closeTemplateExerciseSuggestions();return;}
+ const matches=exerciseMatches(query).slice(0,8);
+ const viewport=window.visualViewport;
+ const bottom=(viewport?.offsetTop??0)+(viewport?.height??window.innerHeight);
+ const rect=input.getBoundingClientRect();
+ const below=bottom-rect.bottom,above=rect.top-(viewport?.offsetTop??0);
+ const placeAbove=below<180&&above>below;
+ list.classList.toggle('above',placeAbove);
+ list.style.maxHeight=Math.min(300,Math.max(110,(placeAbove?above:below)-16))+'px';
+ list.hidden=false;
+ list.innerHTML=matches.length?matches.map((match,index)=>
+  '<button type="button" role="option" id="template-option-'+index+'" class="exercise-search-option'+(index===highlight?' highlighted':'')+
+   '" aria-selected="'+(index===highlight)+'" data-action="template-add-saved-exercise" data-id="'+e(match.exercise.id)+'"><span>'+e(match.exercise.name)+
+   '</span><small>'+(match.similar?'Similar spelling — check name':'Saved exercise')+'</small></button>').join(''):
+  '<div class="exercise-search-empty">No saved match. Use Add exercise to create this name.</div>';
+ list.dataset.highlight=String(highlight);
+ input.setAttribute('aria-expanded',String(matches.length>0));
+ if(highlight>=0&&highlight<matches.length)input.setAttribute('aria-activedescendant','template-option-'+highlight);
+ else input.removeAttribute('aria-activedescendant');
+}
+function closeTemplateExerciseSuggestions(){
+ const input=document.getElementById('template-exercise-name');
+ const list=document.getElementById('template-search-options');
+ if(list){list.hidden=true;list.innerHTML='';}
+ if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}
+}
 async function resolveExerciseInput(name){
  const matches=exerciseMatches(name);
  const exact=matches.find(match=>normalizeName(match.exercise.name)===normalizeName(name));
@@ -1064,6 +1094,8 @@ function validateEntry(input,value,showError=false) {
 document.addEventListener('input',ev=>{
  if(ev.target.id==='exercise-entry-name')renderExerciseSuggestions(ev.target);
  if(ev.target.id==='progress-exercise-search')renderProgressExerciseSuggestions(ev.target);
+ if(ev.target.id==='template-exercise-name')renderTemplateExerciseSuggestions(ev.target);
+ if(ev.target.id==='template-name'&&state.templateDraft){state.templateDraft.name=ev.target.value;state.templateDirty=true;}
  if(ev.target.id==='library-filter'){
   const query=normalizeName(ev.target.value);
   let count=0;
@@ -1085,6 +1117,7 @@ document.addEventListener('input',ev=>{
 });
 document.addEventListener('focusin',ev=>{
  if(ev.target.id==='exercise-entry-name'&&ev.target.value.trim())renderExerciseSuggestions(ev.target);
+ if(ev.target.id==='template-exercise-name'&&ev.target.value.trim())renderTemplateExerciseSuggestions(ev.target);
  if(ev.target.id==='progress-exercise-search'&&ev.target.value.trim())
   renderProgressExerciseSuggestions(ev.target);
 });
@@ -1121,9 +1154,25 @@ document.addEventListener('keydown',ev=>{
   if(options.length)options[current>=0&&current<options.length?current:0].click();
  }
 });
+document.addEventListener('keydown',ev=>{
+ if(ev.target.id!=='template-exercise-name')return;
+ const list=document.getElementById('template-search-options');
+ const options=Array.from(list?.querySelectorAll('[data-action="template-add-saved-exercise"]')||[]);
+ const current=Number(list?.dataset.highlight??-1);
+ if((ev.key==='ArrowDown'||ev.key==='ArrowUp')&&options.length){
+  ev.preventDefault();
+  const next=ev.key==='ArrowDown'?(current+1)%options.length:(current<=0?options.length-1:current-1);
+  renderTemplateExerciseSuggestions(ev.target,next);
+ }else if(ev.key==='Escape'){
+  ev.preventDefault();closeTemplateExerciseSuggestions();
+ }else if(ev.key==='Enter'&&current>=0&&current<options.length&&!list?.hidden){
+  ev.preventDefault();options[current].click();
+ }
+});
 document.addEventListener('click',ev=>{
  if(!ev.target.closest('.exercise-search-field'))closeExerciseSuggestions();
  if(!ev.target.closest('.progress-exercise-search-field'))closeProgressExerciseSuggestions();
+ if(!ev.target.closest('.template-search-field'))closeTemplateExerciseSuggestions();
 });
 document.addEventListener('input',ev=>{
  if(ev.target.id==='photo-overlay-range'){
@@ -1164,6 +1213,18 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(ev.target.dataset?.templateSets!==undefined&&state.templateDraft){
+  const index=Number(ev.target.dataset.templateSets),count=validSetCount(ev.target.value);
+  if(!state.templateDraft.exercises[index])return;
+  if(count===null){
+   toast('Enter a whole number from 1 to 20');
+   ev.target.value=state.templateDraft.exercises[index].sets;
+  }else{
+   state.templateDraft.exercises[index].sets=count;
+   state.templateDirty=true;
+  }
+  return;
+ }
  if(ev.target.dataset?.progressTarget){
   const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.progressTarget);
   if(!ex)return;
@@ -1278,6 +1339,15 @@ document.addEventListener('submit',async ev=>{
    console.error(err);
    toast(err?.message||'Could not save photo');
   }finally{if(submitButton?.isConnected)submitButton.disabled=false;}
+  return;
+ }
+ if(form.dataset.form==='template-add-exercise'){
+  if(!state.templateDraft)return;
+  const name=String(data.get('exerciseName')||'').trim();
+  if(!name)return;
+  const master=await resolveExerciseInput(name);
+  if(!master){document.getElementById('template-exercise-name')?.focus();return;}
+  if(templateDraftAddExercise(master))await render();
   return;
  }
  if(form.dataset.form==='add-exercise'){
