@@ -81,7 +81,7 @@ The catalog is a starting point, not a restriction: you can continue creating cu
 
 ## Progress page
 
-Progress is divided into **Exercises**, **Muscles** and **Photos** to avoid stacking unrelated reports. Exercise Analytics is the default and sorts recently used exercises first.
+Progress is divided into **Exercises**, **Muscles** and **Photos** to avoid stacking unrelated reports. Exercise Analytics is the default and sorts recently used exercises first. The Exercise selector is a searchable combobox using the same partial-word, case-insensitive and close-spelling matching as Add Exercise. Typing filters existing saved exercises; tapping a match opens its analytics without creating any new exercise. The selected exercise is restored when the search is dismissed without a selection. Keyboard arrow keys, Enter and Escape are supported.
 
 **Progression analysis:** Epley estimated 1RM uses weight and 1–10 repetitions from individual recorded, non-warm-up sets, with a single repetition treated as the actual lifted load. RPE is *not* included in the formula. The app chooses the highest eligible estimate per completed session; incomplete sets are omitted individually. Estimates are approximations, especially for sets performed far from failure, and should not be treated as verified maximal strength.
 
