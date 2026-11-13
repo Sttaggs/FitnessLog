@@ -1,63 +1,146 @@
-import {exerciseHistory,exerciseWeights,performanceValue,trendPoints,trendSvg,numericValue} from './analytics.js';
+import {trendSvg,numericValue} from './analytics.js';
 import {muscleSetSummary} from './muscle-utils.js';
+import {strengthSessions,strengthChartPoints,progressionTrend,availableWeights,comparisonPoints,latestWorkingPerformance,comparableEffort,normalizedTarget,nextSessionAdvice} from './progression.js';
 
 const hasData=set => Boolean(set && ['weight','reps','rpe'].some(key=>set[key]!==''&&set[key]!==undefined&&set[key]!==null));
 const formatNumber=value => value===null||value===undefined?'—':String(value);
 const viewNames=['Front','Side','Back'];
-const metricNames={weight:'Weight',reps:'Repetitions',rpe:'Set RPE'};
-const metricDescriptions={
-  weight:'Highest recorded weight in each completed workout. A heavier set with fewer repetitions is not necessarily a performance improvement.',
-  reps:'Highest number of recorded repetitions in a set. Use the weight filter to compare repetitions at the same load.',
-  rpe:'Average of the recorded set RPE values in each completed workout. Lower RPE at comparable weight and reps may indicate improvement.'
-};
 const dateString=(date)=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
+const numberLabel=(value,digits=1)=>Number.isFinite(value)?String(Number(value.toFixed(digits))):'—';
+const signed=(value)=>value===null||value===undefined?'—':(value>0?'+':'')+numberLabel(value)+'%';
+const rangeOptions=[['30','30 days'],['90','90 days'],['365','1 year'],['all','All time']];
+const labelDate=(date,displayDate)=>date?displayDate(date):'';
 
 export function renderProgressView({state,e,displayDate,photoUrl}) {
- const activeIds=new Set(state.sessions.filter(s=>s.status==='finished').flatMap(s=>(s.exercises||[]).map(x=>x.exerciseId).filter(Boolean)));
- const available=state.exercises.slice().sort((a,b)=>Number(activeIds.has(b.id))-Number(activeIds.has(a.id))||a.name.localeCompare(b.name));
- const chosen=available.find(x=>x.id===state.progressExercise)||available[0];
- const history=exerciseHistory(state.sessions,chosen?.id);
- const metric=metricNames[state.progressMetric]?state.progressMetric:'weight';
- const weights=exerciseWeights(history);
- const weightFilter=weights.some(x=>String(x)===String(state.progressWeight))?String(state.progressWeight):'all';
- const points=trendPoints(history,metric,state.progressRange,new Date(),weightFilter);
- const latest=[...history].reverse();
- const lastWeight=latest.map(s=>performanceValue(s,'weight')).find(v=>v!==null);
- const lastReps=latest.map(s=>performanceValue(s,'reps')).find(v=>v!==null);
- const lastRpe=latest.map(s=>performanceValue(s,'rpe')).find(v=>v!==null);
- const bestWeight=history.map(s=>performanceValue(s,'weight')).filter(v=>v!==null);
- const stat=(name,value,unit='')=>'<div class="progress-stat"><span>'+e(name)+'</span><strong>'+e(formatNumber(value))+'</strong>'+(unit?'<small>'+e(unit)+'</small>':'')+'</div>';
- const metricButton=(key)=>'<button type="button" class="'+(metric===key?'active':'')+'" data-action="progress-metric" data-metric="'+key+'" aria-pressed="'+(metric===key)+'">'+metricNames[key]+'</button>';
- const rangeOptions=[['30','30 days'],['90','90 days'],['365','1 year'],['all','All time']];
- const metricDisplay=metric==='weight'?'lb':metric==='reps'?'reps':'RPE';
- const change=points.length>1?Math.round((points.at(-1).value-points[0].value)*10)/10:null;
- const note=change===null?'':('<div class="chart-change">Change in displayed metric: '+(change>0?'+':'')+e(change)+' '+metricDisplay+' from first to latest measured session in this range</div>');
- const detail=history.slice().reverse().slice(0,20).map(record=>
-  '<details class="progress-session"><summary><span>'+e(displayDate(record.date))+' · '+e(record.sessionName)+'</span><span class="progress-session-count">'+record.sets.filter(hasData).length+' logged sets</span></summary>'+
-  '<div class="progress-session-body">'+
-  (record.sets.length?'<div class="progress-session-table"><div class="progress-session-head"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>'+
-   record.sets.map((set,index)=>'<div class="progress-session-row"><span>'+(index+1)+'</span><span>'+e(formatNumber(set.weight===''?null:set.weight))+'</span><span>'+e(formatNumber(set.reps===''?null:set.reps))+'</span><span>'+e(formatNumber(set.rpe===''?null:set.rpe))+'</span></div>').join('')+'</div>':'<p class="helper">No set measurements were recorded.</p>')+
-  (record.notes?'<p class="helper">Notes: '+e(record.notes)+'</p>':'')+
-  '<button class="btn secondary small" data-action="open" data-id="'+e(record.sessionId)+'">Edit workout</button></div></details>'
- ).join('');
- return '<section class="progress-analytics-section">'+
-  '<div class="section-heading"><h2>Exercise Analytics</h2></div>'+
-  '<div class="card progress-card"><p class="helper">Select an exercise to examine its performance history. Only completed workouts and values you actually entered are analyzed.</p>'+
-  '<div class="field"><label for="progress-exercise">Exercise</label><select id="progress-exercise" data-progress-control="exercise">'+
+ const chosen=['exercises','muscles','photos'].includes(state.progressSection)?state.progressSection:'exercises';
+ const tabs='<nav class="progress-section-nav" aria-label="Progress sections">'+
+  [['exercises','Exercises'],['muscles','Muscles'],['photos','Photos']].map(([id,label])=>
+   '<button type="button" data-action="progress-section" data-section="'+id+'" class="'+(chosen===id?'active':'')+'" aria-current="'+(chosen===id?'page':'false')+'">'+label+'</button>').join('')+'</nav>';
+ if(chosen==='photos')return tabs+renderPhotoSection({state,e,displayDate,photoUrl});
+ if(chosen==='muscles')return tabs+renderWeeklyMuscleSets({state,e,inline:true})+renderWorkoutOverview({state,e});
+ return tabs+renderExerciseProgress({state,e,displayDate});
+}
+
+function renderExerciseProgress({state,e,displayDate}){
+ const dates=new Map();
+ for(const session of state.sessions.filter(s=>s.status==='finished')){
+  for(const entry of session.exercises||[]){
+   if(entry.exerciseId&&(!dates.has(entry.exerciseId)||session.date>dates.get(entry.exerciseId)))
+    dates.set(entry.exerciseId,session.date);
+  }
+ }
+ const available=state.exercises.slice().sort((a,b)=>
+  String(dates.get(b.id)||'').localeCompare(String(dates.get(a.id)||''))||a.name.localeCompare(b.name));
+ const chosen=available.find(ex=>ex.id===state.progressExercise)||available[0];
+ const select='<label class="field progress-exercise-picker">Exercise'+
+  '<select id="progress-exercise" data-progress-control="exercise" aria-label="Select exercise">'+
   (available.length?available.map(ex=>'<option value="'+e(ex.id)+'" '+(ex.id===chosen?.id?'selected':'')+'>'+e(ex.name)+'</option>').join(''):'<option value="">No exercises saved</option>')+
-  '</select></div>'+
-  (chosen?'<div class="progress-summary">'+
-    stat('Sessions',history.length)+stat('Best weight',bestWeight.length?Math.max(...bestWeight):null,'lb')+
-    stat('Recent max reps',lastReps,'reps')+stat('Recent avg RPE',lastRpe)+'</div>'+
-    '<div class="progress-metric-toggle" role="group" aria-label="Exercise metric">'+['weight','reps','rpe'].map(metricButton).join('')+'</div>'+
-    '<div class="progress-controls"><label class="field">Date range<select data-progress-control="range">'+rangeOptions.map(([value,label])=>'<option value="'+value+'" '+(value===state.progressRange?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
-    (metric==='reps'&&weights.length?'<label class="field">At weight<select data-progress-control="weightFilter"><option value="all">Any weight</option>'+weights.map(w=>'<option value="'+w+'" '+(weightFilter===String(w)?'selected':'')+'>'+w+' lb</option>').join('')+'</select></label>':'')+'</div>'+
-    '<div class="progress-chart">'+(points.length?trendSvg(points,metric):'<div class="empty">No recorded '+e(metricNames[metric].toLowerCase())+' in the selected period.</div>')+'</div>'+
-    (points.length?'<div class="progress-chart-note">'+e(points.length)+' measured session'+(points.length===1?'':'s')+' · '+e(metricDescriptions[metric])+'</div>'+note:'<p class="helper">'+e(metricDescriptions[metric])+'</p>')+
-    '<div class="section-heading"><h3>Recorded sessions</h3><span class="pill">'+history.length+'</span></div>'+
-    (history.length?'<div class="progress-session-list">'+detail+'</div><p class="helper">Showing up to 20 most recent completed sessions. Missing measurements are displayed as dashes.</p>':'<p class="helper">Finish a workout containing this exercise to begin tracking progress.</p>'):
-    '<div class="empty">Record an exercise in a workout to begin seeing analytics.</div>')+
-  '</div></section>'+renderWorkoutOverview({state,e})+renderWeeklyMuscleSets({state,e})+renderPhotoSection({state,e,displayDate,photoUrl});
+  '</select></label>';
+ if(!chosen)return '<section class="card progress-main-card">'+select+
+  '<p class="helper">Log an exercise and finish a workout to begin tracking progress.</p></section>';
+ const history=[];
+ for(const session of state.sessions){
+  if(session.status!=='finished'||!session.date)continue;
+  const entries=(session.exercises||[]).filter(entry=>entry.exerciseId===chosen.id);
+  if(!entries.length)continue;
+  history.push({
+   sessionId:session.id,date:session.date,sessionName:session.name||'Workout',createdAt:session.createdAt||'',
+   sets:entries.flatMap(entry=>entry.sets||[]),notes:entries.map(entry=>entry.notes).filter(Boolean).join(' · ')
+  });
+ }
+ history.sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt.localeCompare(b.createdAt));
+ const trend=progressionTrend(history);
+ const latestRecord=history.at(-1)||null;
+ const latestSet=latestWorkingPerformance(latestRecord);
+ const rpeComparison=comparableEffort(history);
+ const advice=nextSessionAdvice(latestRecord,chosen);
+ const currentEstimate=trend.latest;
+ const series=strengthChartPoints(history,state.progressRange,new Date());
+ const allMeasurements=strengthSessions(history);
+ const target=normalizedTarget(chosen);
+ const hasTarget=Boolean(target.sets&&target.reps&&target.increment);
+ const controls='<label class="field progress-range">Period<select data-progress-control="range" aria-label="Chart time range">'+
+   rangeOptions.map(([value,label])=>'<option value="'+value+'" '+(value===state.progressRange?'selected':'')+'>'+label+'</option>').join('')+'</select></label>';
+ const latestLabel=latestSet?numberLabel(latestSet.weight,2)+' lb × '+latestSet.reps+' reps':'No complete weight-and-rep set';
+ const rpeLabel=latestSet?.rpe!==null&&latestSet?.rpe!==undefined?' · RPE '+latestSet.rpe:'';
+ const statusNote=trend.change!==null?('Last 3 vs previous 3 measured sessions: '+signed(trend.change)+'.'):
+  trend.count>1?'Latest estimated max vs previous: '+signed(trend.sessionChange)+'.':'Complete another eligible session to compare estimates.';
+ const strengthNote=allMeasurements.length>0?'Based on the strongest eligible set (1–10 reps) from each completed session. The equation estimates strength; it does not measure a tested 1RM.':'An estimate needs recorded weight and 1–10 repetitions in the same set.';
+ const preview=latestRecord?'<div class="progress-kpi"><span>Latest logged performance</span><strong>'+e(latestLabel)+'</strong>'+
+   (rpeLabel?'<small>'+e(rpeLabel.replace(/^ · /,''))+'</small>':'')+'</div>':
+   '<div class="progress-kpi"><span>Latest logged performance</span><strong>—</strong></div>';
+ const strength='<div class="progress-kpi"><span>Estimated 1RM</span><strong>'+
+  (currentEstimate?numberLabel(currentEstimate.value)+' lb':'—')+'</strong>'+
+  (currentEstimate?'<small>'+e(labelDate(currentEstimate.date,displayDate))+'</small>':'')+'</div>';
+ const summary='<section class="card progress-main-card">'+select+
+  '<div class="progress-trend-status" data-status="'+e(trend.status)+'" role="status"><strong>'+e(trend.label)+'</strong>'+
+   '<span>'+e(statusNote)+'</span></div>'+
+  '<div class="progress-kpis">'+preview+strength+'</div>'+
+  (hasTarget?'<div class="progress-next"><span class="progress-overline">NEXT WORKOUT</span><strong>'+e(advice.label)+'</strong>'+
+    '<p>'+e(advice.description)+'</p></div>':
+    '<p class="progress-target-hint">Optional exercise targets can provide a suggested next step.</p>')+
+  '<details class="progress-target-editor" data-progress-target-editor '+(state.progressTargetOpen?'open':'')+'>'+
+   '<summary>'+e(hasTarget?'Edit exercise targets':'Set an exercise target')+'</summary>'+
+   '<div class="progress-target-editor-body">'+targetFields(chosen,e)+
+    '<p class="helper">Targets guide optional suggestions and never change your recorded sets. Set an RPE ceiling only if you want effort checked before increasing load.</p></div></details>'+
+  '</section>';
+ const chart='<section class="card progress-chart-card">'+
+  '<div class="progress-chart-heading"><h2>Estimated strength</h2>'+controls+'</div>'+
+  '<div class="progress-chart">'+(series.length?trendSvg(series,'weight'):
+   '<div class="empty">No eligible estimates in this period.</div>')+'</div>'+
+  '<p class="helper">'+e(strengthNote)+'</p></section>';
+ const effort=rpeComparison?
+  '<p class="helper">At '+e(numberLabel(rpeComparison.weight,2))+' lb × '+e(rpeComparison.reps)+
+  ' reps, recorded RPE changed from '+e(rpeComparison.previous)+' to '+e(rpeComparison.current)+'. RPE provides context; it does not change estimated strength.</p>':'';
+ const more=renderOtherComparisons({state,e,history})+
+  '<details class="progress-history-disclosure"><summary>Recorded sessions ('+history.length+')</summary>'+
+  (history.length?'<div class="progress-session-list">'+history.slice().reverse().slice(0,20).map(record=>
+   '<details class="progress-session"><summary><span>'+e(displayDate(record.date))+' · '+e(record.sessionName)+'</span>'+
+   '<span class="progress-session-count">'+record.sets.filter(hasData).length+' logged sets</span></summary>'+
+   '<div class="progress-session-body"><div class="progress-session-table"><div class="progress-session-head"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>'+
+   record.sets.map((set,index)=>'<div class="progress-session-row"><span>'+(index+1)+(set.warmup===true?' W':'')+
+     '</span><span>'+e(formatNumber(set.weight===''?null:set.weight))+'</span><span>'+
+     e(formatNumber(set.reps===''?null:set.reps))+'</span><span>'+e(formatNumber(set.rpe===''?null:set.rpe))+'</span></div>').join('')+'</div>'+
+   (record.notes?'<p class="helper">Notes: '+e(record.notes)+'</p>':'')+
+   '<button class="btn secondary small" data-action="open" data-id="'+e(record.sessionId)+'">Edit workout</button></div></details>'
+  ).join('')+'</div><p class="helper">Showing up to 20 recent completed sessions. W = warm-up. Empty measurements stay blank.</p>':
+  '<p class="helper">No completed workouts recorded for this exercise.</p>')+
+  '</details>';
+ return summary+chart+(effort?'<div class="progress-effort-note">'+effort+'</div>':'')+more;
+}
+
+function targetFields(ex,e){
+ const target=ex.progressTarget||{};
+ const control=(field,label,min,max,step='1')=>'<label class="field">'+label+
+  '<input type="number" inputmode="decimal" min="'+min+'" max="'+max+'" step="'+step+
+  '" data-progress-target="'+e(ex.id)+'" data-target-field="'+field+'" value="'+e(target[field]??'')+'" placeholder="—"></label>';
+ return '<div class="progress-target-grid">'+control('sets','Working sets',1,12)+
+  control('reps','Reps per set',1,30)+control('increment','Increase by (lb)',0.5,50,'any')+
+  control('rpeCeiling','RPE ceiling (optional)',1,10,'0.5')+'</div>';
+}
+function renderOtherComparisons({state,e,history}){
+ const weights=availableWeights(history);
+ const type=state.progressCompareType==='weightAtReps'?'weightAtReps':'repsAtWeight';
+ const preferred=Number(state.progressWeight);
+ const chosenWeight=weights.includes(preferred)?preferred:weights.at(-1);
+ const rep=Number(state.progressRepTarget)||5;
+ const value=type==='weightAtReps'?rep:chosenWeight;
+ const points=Number.isFinite(value)?comparisonPoints(history,type,value,state.progressRange,new Date()):[];
+ const isWeight=type==='weightAtReps';
+ return '<details class="progress-more-analysis" data-progress-comparison '+(state.progressCompareOpen?'open':'')+'>'+
+  '<summary>Compare performance another way</summary>'+
+  '<div class="progress-comparison-body"><div class="field-row">'+
+    '<label class="field">Comparison<select data-progress-control="compareType">'+
+      '<option value="repsAtWeight" '+(!isWeight?'selected':'')+'>Reps at a fixed weight</option>'+
+      '<option value="weightAtReps" '+(isWeight?'selected':'')+'>Heaviest weight at a rep target</option></select></label>'+
+    (isWeight?'<label class="field">At least<select data-progress-control="repTarget">'+
+      [1,3,5,6,8,10,12,15,20,30].map(n=>'<option value="'+n+'" '+(rep===n?'selected':'')+'>'+n+' reps</option>').join('')+'</select></label>':
+      '<label class="field">At weight<select data-progress-control="weightFilter">'+
+       (weights.length?weights.map(n=>'<option value="'+e(n)+'" '+(n===chosenWeight?'selected':'')+'>'+e(n)+' lb</option>').join(''):
+        '<option value="">No recorded loads</option>')+'</select></label>')+
+   '</div><div class="progress-chart">'+(points.length?trendSvg(points,isWeight?'weight':'reps'):
+    '<div class="empty">No matching completed sets in this period.</div>')+'</div>'+
+   '<p class="helper">'+e(isWeight?'Heaviest load for at least the chosen reps; reps at higher loads are not converted.':'Best recorded reps at exactly the selected weight. Warm-up sets are excluded.')+'</p></div></details>';
 }
 
 function renderWeeklyMuscleSets({state,e}) {
