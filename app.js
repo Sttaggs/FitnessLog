@@ -1,7 +1,8 @@
-import {list, get, put, remove, replaceStores, newId} from './db.js';
+import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {CATALOG_CATEGORIES,planCatalogInstall} from './exercise-catalog.js';
 import {muscleChoices,muscleLabel,exercisePrimaryMuscle,exerciseSecondaryMuscles} from './muscle-utils.js';
 import {restPreference,setRestPreference,readRestTimer,startRestTimer,pauseRestTimer,resumeRestTimer,resetRestTimer,adjustRestTimer,markRestAlerted,restTimeLabel} from './rest-timer.js';
 
@@ -12,7 +13,7 @@ const escapeHtml = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&
 const e = escapeHtml;
 const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
-const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
+const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
 const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
@@ -145,6 +146,17 @@ function previousPerformance(exerciseId,currentSessionId,currentDate) {
   }
  }
  return null;
+}
+// Install the user's requested starter exercises on this device once.
+// Existing workouts/exercise IDs and custom exercises are never replaced.
+// The marker also prevents intentionally removed starter entries reappearing.
+const CATALOG_INSTALLED_KEY='fitnesslog-starter-exercises-v1';
+async function installStarterExercises() {
+ try {if(localStorage.getItem(CATALOG_INSTALLED_KEY)==='installed')return;}catch {}
+ const existing=await list('exercises');
+ const {toInsert,toUpdate}=planCatalogInstall(existing,newId,new Date().toISOString());
+ if(toInsert.length||toUpdate.length)await putMany('exercises',[...toInsert,...toUpdate]);
+ try {localStorage.setItem(CATALOG_INSTALLED_KEY,'installed');}catch {}
 }
 // One-time, non-destructive linkage of exercise entries from earlier app versions.
 async function linkExistingExercises() {
@@ -1017,7 +1029,7 @@ document.addEventListener('submit',async ev=>{
  }
 });
 $('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
-(async()=>{try{await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
+(async()=>{try{await installStarterExercises();await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
 document.addEventListener('visibilitychange',refreshRestTimers);
 window.addEventListener('pageshow',refreshRestTimers);
