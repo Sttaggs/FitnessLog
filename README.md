@@ -67,7 +67,7 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Warm-up sets can be marked in More, without adding controls to the main set-logging table. Marked warm-ups are excluded from strength trends, target assessments and weekly muscle counts; older unmarked sets retain their original meaning
 - Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
 - Create sets independently per exercise; quick exercise-only logging is valid
-- Standard sets are the active format; other technique formats are deferred until designed
+- Conventional sets remain the default; optional drop sets, ladders, Myo-reps and linked supersets are implemented behind collapsed controls
 - Cardio and sauna activity entries
 - Session and exercise notes, subjective session effort/fatigue
 - Auto-save to IndexedDB
@@ -87,11 +87,11 @@ For consistent analytics, advanced sequences (including their additional drop, l
 
 Templates remember the technique and number of stages for each set, together with superset links. Advanced options in the standalone template editor remain collapsed by default. Starting a workout from a template generates new set and stage IDs with **blank weight, repetitions and RPE**, while superset pairing is remapped to unique IDs for the new workout.
 
-All advanced stage measurements persist in local workout records and full JSON backups; CSV exports now add set-method and stage columns, and printed reports include the stage details. Legacy standard sets and templates remain supported. No advanced technique is ever inserted into a workout unless you explicitly choose it.
+All advanced stage measurements persist in local workout records and full JSON backups; CSV exports now add set-method, stage and superset columns, and printed reports include the stage details. Legacy standard sets and templates remain supported. No advanced technique is ever inserted into a workout unless you explicitly choose it.
 
 ## Workout templates
 
-Templates are stored in a dedicated local IndexedDB store. From Home, choose **Use a template** to view saved templates and start a workout from one, or **Create template** to build one without recording a session. Each template is an ordered list of saved exercise IDs/names and set counts. The editor supports searching existing exercises, creating new saved exercise names, changing set counts (1–20), moving exercises up or down, and removing exercises. You can edit or delete templates without deleting workout records.
+Templates are stored in a dedicated local IndexedDB store. From Home, choose **Use a template** to view saved templates and start a workout from one, or **Create template** to build one without recording a session. Each template is an ordered list of saved exercise IDs/names and set counts, with optional advanced-set stage counts and superset links. The editor supports searching existing exercises, creating new saved exercise names, changing set counts (1–20), moving exercises up or down, and removing exercises. You can edit or delete templates without deleting workout records.
 
 In an active or previously completed workout, use **Save as template**. Immediately after finishing a workout, a small History shortcut also allows saving the just-finished workout as a template. If a template name already exists, updating it requires confirmation. When a template is started, set rows have blank weight, repetitions, and RPE; they are new session entries and are fully editable, with all the existing exercise and set editing controls. If an unfinished workout already exists, starting from a template asks to append the exercises rather than overwriting it.
 
@@ -124,7 +124,7 @@ In **Muscles**, only sets with recorded repetitions above zero and one assigned 
 Progress Photos are dated Front/Side/Back photos saved as compressed JPEGs in a separate local IndexedDB store. The Progress page provides a collapsed add-photo form, a saved-photo gallery, and same-view side-by-side or adjustable overlay comparisons. All photos remain local to the current device unless the user deliberately exports them. Standard workout CSV, JSON, and PDF exports do **not** include photos. Settings has a separate explicit **Download backup including photos** action; photo backups can be large and must be protected like personal files. Restoring an older workout-only backup does not erase photos. Uninstalling the app or clearing website storage can permanently erase locally stored photos.
 
 ## Roadmap
-- Structured superset groups and advanced nested techniques
+- Optional training-analysis refinements for advanced set methods, without treating them as conventional strength sets
 - Per-set exercise UI refinements and inline timers
 - Dedicated body-measurement module and more advanced progress-photo alignment tools
 - Optional deeper trends and tracking rotation
