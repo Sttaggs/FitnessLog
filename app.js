@@ -568,6 +568,48 @@ function renderHistory() {
   </div>
  </details>`;
 }
+function renderTemplates(){
+ const list=state.templates.map(template=>
+  '<div class="item template-list-item"><div class="template-list-head"><div class="grow"><strong>'+e(template.name)+'</strong>'+
+   '<p class="helper">'+e(templateSummary(template))+'</p></div>'+
+   '<button type="button" class="btn small" data-action="start-from-template" data-id="'+e(template.id)+'">Start</button></div>'+
+   '<div class="template-list-actions">'+
+    '<button type="button" class="btn ghost small" data-action="edit-template" data-id="'+e(template.id)+'">Edit</button>'+
+    '<button type="button" class="btn ghost small" data-action="delete-template" data-id="'+e(template.id)+'">Delete</button>'+
+   '</div></div>').join('');
+ return '<button type="button" class="btn ghost small" data-action="templates-home">← Home</button>'+
+  '<div class="card"><h2>Workout templates</h2>'+
+   '<p class="helper">Start a new workout with preset exercises and set counts, or create and edit templates without logging a workout. Every new set begins blank.</p>'+
+   '<button type="button" class="btn wide" data-action="new-template">＋ Create template</button></div>'+
+  (state.templates.length?'<div class="section-heading"><h2>Saved templates</h2><span class="pill">'+state.templates.length+'</span></div>'+list:
+   '<div class="card empty">No templates saved yet. Create one here, or save a workout as a template.</div>');
+}
+function renderTemplateEditor(){
+ const template=state.templateDraft;
+ if(!template)return '<div class="card">No template is open.</div>';
+ const count=template.exercises?.length||0;
+ const exerciseRows=(template.exercises||[]).map((entry,index)=>
+  '<div class="item template-editor-row"><div class="template-editor-row-head"><strong>'+e(entry.name)+'</strong>'+
+   '<button type="button" class="btn ghost small" data-action="template-remove-exercise" data-index="'+index+'" aria-label="Remove '+e(entry.name)+'">Remove</button></div>'+
+   '<div class="template-editor-row-bottom"><label>Sets<input type="number" inputmode="numeric" min="1" max="20" step="1" data-template-sets="'+index+'" value="'+e(entry.sets)+'" aria-label="Number of sets for '+e(entry.name)+'"></label>'+
+   '<div class="template-order-buttons"><button type="button" class="btn secondary small" data-action="template-move-up" data-index="'+index+'" aria-label="Move '+e(entry.name)+' earlier" '+(index===0?'disabled':'')+'>↑</button>'+
+   '<button type="button" class="btn secondary small" data-action="template-move-down" data-index="'+index+'" aria-label="Move '+e(entry.name)+' later" '+(index===count-1?'disabled':'')+'>↓</button></div></div></div>'
+ ).join('');
+ const search='<form data-form="template-add-exercise" class="template-add-exercise"><div class="field exercise-search-field template-search-field">'+
+  '<label for="template-exercise-name">Add an exercise</label>'+
+  '<input id="template-exercise-name" name="exerciseName" placeholder="Search or type a new exercise" required autocomplete="off" spellcheck="false" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="template-search-options" aria-expanded="false">'+
+  '<div id="template-search-options" class="exercise-search-options" role="listbox" aria-label="Exercises for template" hidden></div></div>'+
+  '<button class="btn secondary wide" type="submit">＋ Add exercise</button></form>';
+ return '<button type="button" class="btn ghost small" data-action="templates-back">← Templates</button>'+
+  '<div class="card template-editor-heading"><h2>'+e(template.createdAt&&state.templates.some(x=>x.id===template.id)?'Edit template':'New template')+'</h2>'+
+   '<label class="field" for="template-name">Template name<input id="template-name" type="text" maxlength="100" value="'+e(template.name)+'" placeholder="e.g. Push day"></label>'+
+   '<p class="helper">Only exercise order and set counts are saved. Creating a template does not log a workout.</p></div>'+
+  '<div class="section-heading"><h2>Exercises</h2><span class="pill">'+count+'</span></div>'+
+  (exerciseRows||'<div class="card empty">No exercises yet. Add one below.</div>')+
+  (count<MAX_TEMPLATE_EXERCISES?'<div class="card">'+search+'</div>':'<p class="helper">Template exercise limit reached.</p>')+
+  '<div class="card template-editor-footer"><button type="button" class="btn wide" data-action="template-save">Save template</button>'+
+   '<button type="button" class="btn secondary wide" data-action="templates-back">Cancel</button></div>';
+}
 function renderProgress() {
  return renderProgressView({state,e,displayDate,photoUrl});
 }
