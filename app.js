@@ -3,7 +3,7 @@ import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSv
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
 import {CATALOG_CATEGORIES,planCatalogInstall} from './exercise-catalog.js';
-import {muscleChoices,muscleLabel,exercisePrimaryMuscle,exerciseSecondaryMuscles} from './muscle-utils.js';
+import {muscleChoices,muscleLabel,exercisePrimaryMuscle,singleMuscleExercise} from './muscle-utils.js';
 import {restPreference,setRestPreference,readRestTimer,startRestTimer,pauseRestTimer,resumeRestTimer,resetRestTimer,adjustRestTimer,markRestAlerted,restTimeLabel} from './rest-timer.js';
 
 const $ = (s) => document.querySelector(s);
@@ -157,6 +157,14 @@ async function installStarterExercises() {
  const {toInsert,toUpdate}=planCatalogInstall(existing,newId,new Date().toISOString());
  if(toInsert.length||toUpdate.length)await putMany('exercises',[...toInsert,...toUpdate]);
  try {localStorage.setItem(CATALOG_INSTALLED_KEY,'installed');}catch {}
+}
+// Existing exercise records may contain tags from earlier versions.
+// Keep only the assigned muscle; preserve every permanent ID and workout.
+async function removeLegacySecondaryMuscles(){
+ const existing=await list('exercises');
+ const updates=existing.filter(ex=>Object.prototype.hasOwnProperty.call(ex,'secondaryMuscles'))
+  .map(singleMuscleExercise);
+ if(updates.length)await putMany('exercises',updates);
 }
 // One-time, non-destructive linkage of exercise entries from earlier app versions.
 async function linkExistingExercises() {
@@ -356,9 +364,7 @@ function renderProgressionTarget(master,compact=false){
 function renderExerciseMore(x,scope,type){
  const master=state.exercises.find(ex=>ex.id===x.exerciseId);
  const primary=exercisePrimaryMuscle(master);
- const secondary=exerciseSecondaryMuscles(master);
  const expanded=state.moreOpen.has(x.id);
- const checked=muscleChoices(state.exercises).filter(m=>m!==primary);
  return '<details class="exercise-more" data-exercise-more="'+e(x.id)+'" '+(expanded?'open':'')+'>'+
   '<summary>More <span aria-hidden="true">⌄</span></summary>'+
   '<div class="exercise-more-body">'+
@@ -367,13 +373,9 @@ function renderExerciseMore(x,scope,type){
     '<div class="field"><label>Technique</label><div class="technique-label">'+e(type)+'</div></div>'+
   '</div>'+
   (master?'<div class="exercise-muscle-controls">'+
-   '<label class="field">Primary target muscle'+
+   '<label class="field">Muscle group'+
      '<select data-muscle-primary="'+e(master.id)+'">'+muscleOptions(primary)+'</select></label>'+
-   '<details class="exercise-secondary-tags"><summary>Secondary muscle tags (optional)'+(secondary.length?' · '+secondary.map(e).join(', '):'')+'</summary>'+
-   '<div class="muscle-tag-grid">'+checked.map(muscle=>
-     '<label class="muscle-tag"><input type="checkbox" data-muscle-secondary="'+e(master.id)+'" value="'+e(muscle)+'" '+(secondary.includes(muscle)?'checked':'')+'><span>'+e(muscle)+'</span></label>').join('')+'</div>'+
-   '<p class="helper">Only primary muscle sets count in the weekly totals. Secondary tags describe additional involvement.</p></details>'+
-  '</div>':'<p class="helper">Muscle tags require a linked library exercise.</p>')+
+  '</div>':'<p class="helper">Choose a saved exercise to assign a muscle group.</p>')+
   (master?'<details class="exercise-secondary-config"><summary>Progression target (optional)</summary>'+
     '<div class="exercise-secondary-config-body">'+renderProgressionTarget(master,true)+'</div></details>':'')+
   '<details class="exercise-secondary-config"><summary>Mark warm-up sets (optional)</summary>'+
@@ -537,7 +539,7 @@ function renderLibrary() {
    '<div class="card" style="margin-top:12px"><h2>'+e(ex.name)+'</h2>'+
    '<p class="helper">'+e(exercisePrimaryMuscle(ex)||ex.category||'Muscle unspecified')+' · '+e(ex.equipment||'Equipment unspecified')+'</p>'+
    '<p>'+records.length+' recorded workout entries</p>'+
-   (exerciseSecondaryMuscles(ex).length?'<p class="helper">Secondary muscles: '+e(exerciseSecondaryMuscles(ex).join(', '))+'</p>':'')+'</div>'+
+   '</div>'+
    '<div class="section-heading"><h2>Performance history</h2></div>'+
    (records.length?records.map(({session,entry})=>'<div class="item">'+
     '<div class="row between"><div class="grow"><strong>'+e(displayDate(session.date))+'</strong><p class="helper" style="margin:4px 0">'+e(session.name)+'</p>'+
@@ -572,7 +574,7 @@ function renderLibrary() {
   '<p class="helper">Choose from the starter exercises or add any custom exercise. Existing workout history remains linked.</p>'+
   '<form data-form="library" class="stack"><div class="field"><label>New exercise (optional)</label>'+
   '<input name="name" placeholder="Exercise name" required></div><div class="field-row">'+
-  '<div class="field"><label>Primary muscle</label><select name="muscle">'+muscleOptions('')+'</select></div>'+
+  '<div class="field"><label>Muscle group</label><select name="muscle">'+muscleOptions('')+'</select></div>'+
   '<div class="field"><label>Equipment</label><input name="equipment" placeholder="Dumbbells"></div></div>'+
   '<button class="btn secondary wide" type="submit">Add to library</button></form></div>'+
   '<div class="section-heading"><h2>Saved exercises</h2><span class="pill">'+state.exercises.length+'</span></div>'+
@@ -648,7 +650,7 @@ async function restoreBackup(file) {
  if(!confirm(question))return;
  // Validate and decode every optional photo before starting the atomic DB transaction.
  const photos=hasPhotoPayload?await restorePhotos(parsed.photos):null;
- const stores={sessions:parsed.sessions,exercises:parsed.exercises};
+ const stores={sessions:parsed.sessions,exercises:parsed.exercises.map(singleMuscleExercise)};
  if(photos!==null)stores.photos=photos;
  await replaceStores(stores);
  for(const url of photoUrls.values())URL.revokeObjectURL(url);
@@ -962,27 +964,8 @@ document.addEventListener('change',async ev=>{
   const value=muscleLabel(ev.target.value);
   if(value&&!muscleChoices(state.exercises).includes(value))return;
   ex.muscle=value;
-  ex.secondaryMuscles=exerciseSecondaryMuscles(ex);
   await put('exercises',ex);
   await render();
-  return;
- }
- if(ev.target.dataset?.muscleSecondary){
-  const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.muscleSecondary);
-  if(!ex)return;
-  const value=muscleLabel(ev.target.value);
-  const allowed=muscleChoices(state.exercises);
-  if(!allowed.includes(value))return;
-  const tags=new Set(exerciseSecondaryMuscles(ex));
-  if(ev.target.checked&&value!==exercisePrimaryMuscle(ex))tags.add(value);
-  else tags.delete(value);
-  ex.secondaryMuscles=[...tags];
-  await put('exercises',ex);
-  // Update the adjacent summary without re-rendering the entire exercise card.
-  const summary=ev.target.closest('.exercise-secondary-tags')?.querySelector('summary');
-  if(summary){
-   summary.textContent='Secondary muscle tags (optional)'+(ex.secondaryMuscles.length?' · '+ex.secondaryMuscles.join(', '):'');
-  }
   return;
  }
  if(ev.target.matches?.('[data-rest-minutes]')){
@@ -1076,7 +1059,7 @@ document.addEventListener('submit',async ev=>{
  }
 });
 $('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
-(async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
+(async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}try{await removeLegacySecondaryMuscles();}catch(error){console.warn('Exercise tag cleanup could not finish',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
 document.addEventListener('visibilitychange',refreshRestTimers);
 window.addEventListener('pageshow',refreshRestTimers);
