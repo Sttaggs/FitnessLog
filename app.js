@@ -2,6 +2,7 @@ import {list, get, put, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {MUSCLE_GROUPS,muscleChoices,muscleLabel,exercisePrimaryMuscle,exerciseSecondaryMuscles} from './muscle-utils.js';
 import {restPreference,setRestPreference,readRestTimer,startRestTimer,pauseRestTimer,resumeRestTimer,resetRestTimer,adjustRestTimer,markRestAlerted,restTimeLabel} from './rest-timer.js';
 
 const $ = (s) => document.querySelector(s);
@@ -13,7 +14,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, progressExercise:'', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -114,6 +115,7 @@ async function addExerciseToWorkout(master){
  // Keep only the newest exercise expanded to reduce scrolling during a workout.
  state.expanded.clear();
  state.previousOpenId=null;
+ state.moreOpen.clear();
  state.expanded.add(entry.id);
  await saveSession();
  await render();
@@ -318,6 +320,37 @@ function refreshRestTimers(){
   }
  }
 }
+function muscleOptions(selected){
+ const candidates=muscleChoices(state.exercises);
+ if(selected&&!candidates.includes(selected))candidates.push(selected);
+ return '<option value="">Unassigned</option>'+candidates.map(muscle=>
+  '<option value="'+e(muscle)+'" '+(selected===muscle?'selected':'')+'>'+e(muscle)+'</option>').join('');
+}
+function renderExerciseMore(x,scope,type){
+ const master=state.exercises.find(ex=>ex.id===x.exerciseId);
+ const primary=exercisePrimaryMuscle(master);
+ const secondary=exerciseSecondaryMuscles(master);
+ const expanded=state.moreOpen.has(x.id);
+ const checked=muscleChoices(state.exercises).filter(m=>m!==primary);
+ return '<details class="exercise-more" data-exercise-more="'+e(x.id)+'" '+(expanded?'open':'')+'>'+
+  '<summary>More <span aria-hidden="true">⌄</span></summary>'+
+  '<div class="exercise-more-body">'+
+  '<div class="field-row">'+
+    textField('Exercise name',scope,'name',x.name)+
+    '<div class="field"><label>Technique</label><div class="technique-label">'+e(type)+'</div></div>'+
+  '</div>'+
+  (master?'<div class="exercise-muscle-controls">'+
+   '<label class="field">Primary target muscle'+
+     '<select data-muscle-primary="'+e(master.id)+'">'+muscleOptions(primary)+'</select></label>'+
+   '<details class="exercise-secondary-tags"><summary>Secondary muscle tags (optional)'+(secondary.length?' · '+secondary.map(e).join(', '):'')+'</summary>'+
+   '<div class="muscle-tag-grid">'+checked.map(muscle=>
+     '<label class="muscle-tag"><input type="checkbox" data-muscle-secondary="'+e(master.id)+'" value="'+e(muscle)+'" '+(secondary.includes(muscle)?'checked':'')+'><span>'+e(muscle)+'</span></label>').join('')+'</div>'+
+   '<p class="helper">Only primary muscle sets count in the weekly totals. Secondary tags describe additional involvement.</p></details>'+
+  '</div>':'<p class="helper">Muscle tags require a linked library exercise.</p>')+
+  memoField('Exercise notes',scope,'notes',x.notes||'')+
+  '<div class="exercise-remove-row"><button type="button" class="btn danger small" data-action="delete-exercise" data-id="'+e(x.id)+'">Remove exercise</button></div>'+
+  '</div></details>';
+}
 function renderExercise(x,i) {
  const isOpen=state.expanded.has(x.id);
  const prev=x.exerciseId?previousPerformance(x.exerciseId,state.session?.id,state.session?.date):null;
@@ -326,10 +359,6 @@ function renderExercise(x,i) {
  return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
  <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(type)} · ${x.sets?.length||0} set rows</small></div><span class="muted">▾</span></div></summary>
  <div class="detail-body">
- <div class="field-row">
- ${textField('Exercise name',scope,'name',x.name)}
- <div class="field"><label>Technique</label><div class="technique-label">${e(type)}</div></div>
- </div>
  ${renderRestTimer(x)}
  ${prev?`<section class="previous-reference">
  <button type="button" class="previous-toggle" data-action="toggle-previous" data-id="${e(x.id)}" aria-expanded="${state.previousOpenId===x.id}" aria-controls="previous-panel-${e(x.id)}">
@@ -349,12 +378,8 @@ function renderExercise(x,i) {
  <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="${e(historicalField(prev?.sets?.[j],'rpe','1–10'))}">
  <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>`).join('')}
  ${prev?'<p class="helper historical-hint">Faded values show last time; only typed values are saved.</p>':''}
- <div class="row between wrap" style="margin-top:12px">
- <button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button>
- <button class="btn danger small" data-action="delete-exercise" data-id="${x.id}">Remove exercise</button>
- </div>
- <details class="exercise-notes"><summary class="helper">Optional exercise notes</summary>${memoField('Notes',scope,'notes',x.notes||'')}</details>
- <p class="helper">Set fields are optional. RPE 10 = maximum effort; 1 = very little effort.</p>
+ <div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
+ ${renderExerciseMore(x,scope,type)}
  </div></details>`;
 }
 function renderActivity(a) {
@@ -486,7 +511,7 @@ function renderLibrary() {
  }
  return `<div class="card"><h2>Exercise library</h2><p class="helper">New exercises are added here automatically when you log them. All workouts using the same exercise are linked.</p>
  <form data-form="library" class="stack"><div class="field"><label>New exercise (optional)</label><input name="name" placeholder="Exercise name" required></div><div class="field-row">
- <div class="field"><label>Primary muscle</label><input name="muscle" placeholder="Shoulders"></div>
+ <div class="field"><label>Primary muscle</label><select name="muscle">${muscleOptions('')}</select></div>
  <div class="field"><label>Equipment</label><input name="equipment" placeholder="Dumbbells"></div></div>
  <button class="btn secondary wide" type="submit">Add to library</button></form></div>
  <div class="section-heading"><h2>Saved exercises</h2><span class="pill">${state.exercises.length}</span></div>
@@ -585,7 +610,7 @@ async function action(name,el) {
   await saveSession();return render();
  }
  if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
- if(name==='close-workout'){await flushSave();state.session=null;state.expanded.clear();state.tab='home';return render();}
+ if(name==='close-workout'){await flushSave();state.session=null;state.moreOpen.clear();state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
  if(name==='progress-metric'){
   if(['weight','reps','rpe'].includes(el.dataset.metric)){
@@ -694,7 +719,7 @@ async function action(name,el) {
   return;
  }
  if(name==='delete-set'){const x=s.exercises.find(x=>x.id===el.dataset.exercise);x.sets=x.sets.filter(y=>y.id!==el.dataset.id);await saveSession();return render();}
- if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
+ if(name==='delete-exercise'){if(!confirm('Remove exercise?'))return;state.moreOpen.delete(el.dataset.id);state.expanded.delete(el.dataset.id);s.exercises=s.exercises.filter(x=>x.id!==el.dataset.id);await saveSession();return render();}
  if(name==='add-cardio'||name==='add-sauna'){const type=name==='add-cardio'?'cardio':'sauna';s.activities.push({id:newId(),type,mode:type==='cardio'?'Walking':'Traditional',duration:'',distance:'',level:'',temperature:'',intensity:'',notes:''});await saveSession();return render();}
  if(name==='delete-activity'){s.activities=s.activities.filter(a=>a.id!==el.dataset.id);await saveSession();return render();}
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
@@ -725,7 +750,7 @@ function findScope(scope){
  if(kind==='set')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId);
 }
 document.addEventListener('click',async ev=>{
- const nav=ev.target.closest('[data-tab]');if(nav){await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.libraryDetail=null;await render();return;}
+ const nav=ev.target.closest('[data-tab]');if(nav){await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.moreOpen.clear();state.libraryDetail=null;await render();return;}
  const el=ev.target.closest('[data-action]');if(!el)return;
  try{await action(el.dataset.action,el);}catch(error){console.error(error);toast('Unable to complete action');}
 });
@@ -792,11 +817,46 @@ document.addEventListener('input',ev=>{
 });
 document.addEventListener('toggle',ev=>{
  const card=ev.target;
- if(!card.matches?.('[data-exercise-card]')||!document.contains(card))return;
+ if(!document.contains(card))return;
+ if(card.matches?.('[data-exercise-more]')){
+  if(card.open)state.moreOpen.add(card.dataset.exerciseMore);
+  else state.moreOpen.delete(card.dataset.exerciseMore);
+  return;
+ }
+ if(!card.matches?.('[data-exercise-card]'))return;
  if(card.open)state.expanded.add(card.dataset.exerciseCard);
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(ev.target.dataset?.musclePrimary){
+  const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.musclePrimary);
+  if(!ex)return;
+  const value=muscleLabel(ev.target.value);
+  if(value&&!muscleChoices(state.exercises).includes(value))return;
+  ex.muscle=value;
+  ex.secondaryMuscles=exerciseSecondaryMuscles(ex);
+  await put('exercises',ex);
+  await render();
+  return;
+ }
+ if(ev.target.dataset?.muscleSecondary){
+  const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.muscleSecondary);
+  if(!ex)return;
+  const value=muscleLabel(ev.target.value);
+  const allowed=muscleChoices(state.exercises);
+  if(!allowed.includes(value))return;
+  const tags=new Set(exerciseSecondaryMuscles(ex));
+  if(ev.target.checked&&value!==exercisePrimaryMuscle(ex))tags.add(value);
+  else tags.delete(value);
+  ex.secondaryMuscles=[...tags];
+  await put('exercises',ex);
+  // Update the adjacent summary without re-rendering the entire exercise card.
+  const summary=ev.target.closest('.exercise-secondary-tags')?.querySelector('summary');
+  if(summary){
+   summary.textContent='Secondary muscle tags (optional)'+(ex.secondaryMuscles.length?' · '+ex.secondaryMuscles.join(', '):'');
+  }
+  return;
+ }
  if(ev.target.matches?.('[data-rest-minutes]')){
   const minutes=Number(ev.target.value);
   if(ev.target.value.trim()!==''&&Number.isFinite(minutes)&&minutes>=0.25&&minutes<=30){
@@ -881,7 +941,7 @@ document.addEventListener('submit',async ev=>{
   const wasSaved=state.exercises.some(x=>normalizeName(x.name)===normalizeName(name));
   const master=await resolveExerciseInput(name);
   if(!master){form.querySelector('input[name="name"]')?.focus();return;}
-  if(!wasSaved){master.muscle=String(data.get('muscle')||'');master.equipment=String(data.get('equipment')||'');await put('exercises',master);}
+  if(!wasSaved){master.muscle=muscleLabel(data.get('muscle'));master.equipment=String(data.get('equipment')||'');await put('exercises',master);}
   await render();toast(wasSaved?'Exercise already exists':'Exercise saved');
  }
 });
