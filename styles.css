@@ -235,3 +235,8 @@
 .exercise-warmup-row input[type=checkbox]{width:18px;min-height:18px;flex:0 0 18px}
 .exercise-secondary-config>.helper{margin:0;padding:2px 12px 12px}
 @media(max-width:370px){.progress-kpi strong{font-size:15px}.progress-kpi{padding:9px}.progress-section-nav button{font-size:12px}.progress-chart-heading{align-items:flex-start}}
+
+
+.progress-method{border-top:1px solid var(--border);margin-top:10px;padding-top:5px}
+.progress-method>summary{cursor:pointer;padding:9px 0;color:var(--muted);font-size:12px}
+.progress-method>.helper{padding:0 0 5px;margin:4px 0 7px}
