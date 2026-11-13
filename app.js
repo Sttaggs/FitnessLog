@@ -1076,7 +1076,7 @@ document.addEventListener('submit',async ev=>{
  }
 });
 $('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
-(async()=>{try{await installStarterExercises();await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
+(async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
 document.addEventListener('visibilitychange',refreshRestTimers);
 window.addEventListener('pageshow',refreshRestTimers);
