@@ -1,4 +1,5 @@
 import {exerciseHistory,exerciseWeights,performanceValue,trendPoints,trendSvg,numericValue} from './analytics.js';
+import {muscleSetSummary} from './muscle-utils.js';
 
 const hasData=set => Boolean(set && ['weight','reps','rpe'].some(key=>set[key]!==''&&set[key]!==undefined&&set[key]!==null));
 const formatNumber=value => value===null||value===undefined?'—':String(value);
@@ -56,9 +57,21 @@ export function renderProgressView({state,e,displayDate,photoUrl}) {
     '<div class="section-heading"><h3>Recorded sessions</h3><span class="pill">'+history.length+'</span></div>'+
     (history.length?'<div class="progress-session-list">'+detail+'</div><p class="helper">Showing up to 20 most recent completed sessions. Missing measurements are displayed as dashes.</p>':'<p class="helper">Finish a workout containing this exercise to begin tracking progress.</p>'):
     '<div class="empty">Record an exercise in a workout to begin seeing analytics.</div>')+
-  '</div></section>'+renderWorkoutOverview({state,e})+renderPhotoSection({state,e,displayDate,photoUrl});
+  '</div></section>'+renderWorkoutOverview({state,e})+renderWeeklyMuscleSets({state,e})+renderPhotoSection({state,e,displayDate,photoUrl});
 }
 
+function renderWeeklyMuscleSets({state,e}) {
+ const summary=muscleSetSummary(state.sessions,state.exercises);
+ const rows=summary.rows;
+ const table=rows.length?
+  '<div class="muscle-week-list"><div class="muscle-week-heading"><span>Muscle group</span><span>This week</span><span>Last week</span></div>'+
+  rows.map(row=>'<div class="muscle-week-row"><span>'+e(row.muscle)+'</span><strong>'+row.current+'</strong><span>'+row.previous+'</span></div>').join('')+'</div>':
+  '<p class="helper">No sets with recorded repetitions were assigned to muscle groups in either week.</p>';
+ return '<details class="card muscle-week-overview"><summary>Weekly muscle sets <span class="helper">Optional</span></summary>'+
+  '<p class="helper">Weekly totals use Monday–Sunday calendar weeks. Each set with recorded repetitions greater than zero counts once toward its exercise’s primary muscle. Secondary tags are not counted. Warm-up sets are included unless they are recorded separately.</p>'+
+  table+
+  '<p class="helper">Changing an exercise’s primary muscle also updates the classification of its historical sets. These are set counts, not weight × reps volume.</p></details>';
+}
 function renderWorkoutOverview({state,e}) {
  const completed=state.sessions.filter(s=>s.status==='finished');
  const current=new Date(), dateThreshold=(days)=>{
