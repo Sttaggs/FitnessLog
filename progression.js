@@ -141,6 +141,9 @@ export function nextSessionAdvice(record,exercise){
   if(measured.some(p=>p.rpe>target.rpeCeiling))return {kind:'hold',label:'Keep the current load',
    description:'All repetitions were achieved, but at least one set exceeded the RPE ceiling of '+target.rpeCeiling+'.',suggested:load};
  }
+ if(target.rpeCeiling===null&&measured.some(performance=>performance.rpe===10))
+  return {kind:'hold',label:'Target met at maximum effort',
+   description:'All repetitions were achieved, but one or more sets were recorded at RPE 10. Consider repeating the load before increasing.',suggested:load};
  const next=rounded(load+target.increment,2);
  return {kind:'increase',label:'Consider '+next+' lb next time',
   description:'All '+target.sets+' working sets reached '+target.reps+' repetitions at '+load+' lb'+(target.rpeCeiling!==null?' without exceeding RPE '+target.rpeCeiling:'')+'. The '+target.increment+' lb increase is optional.',suggested:next};
