@@ -185,3 +185,53 @@
 .muscle-week-heading{color:var(--muted);font-size:10px;font-weight:700}
 .muscle-week-row{padding:9px 0;border-top:1px solid var(--border);font-variant-numeric:tabular-nums;font-size:13px}
 .muscle-week-heading>span:not(:first-child),.muscle-week-row>span:not(:first-child),.muscle-week-row>strong{text-align:center}
+
+
+/* Progress v2: one readable summary, optional deeper comparisons. */
+.progress-section-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:0 0 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px}
+.progress-section-nav button{border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:13px;font-weight:700;min-height:42px;padding:8px 4px}
+.progress-section-nav button.active{background:var(--accent);color:#172412}
+.progress-section-nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.progress-main-card{margin-top:0}
+.progress-exercise-picker{margin-bottom:14px}
+.progress-trend-status{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px 12px;padding:10px 0;border-top:1px solid var(--border)}
+.progress-trend-status strong{font-size:15px}
+.progress-trend-status span{color:var(--muted);font-size:12px;line-height:1.45;flex:1 1 190px}
+.progress-trend-status[data-status=improving] strong{color:var(--accent)}
+.progress-trend-status[data-status=declining] strong{color:#e2b374}
+.progress-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:5px 0 13px}
+.progress-kpi{background:var(--surface2);border-radius:11px;padding:11px;min-width:0}
+.progress-kpi span{display:block;color:var(--muted);font-size:11px;margin-bottom:6px}
+.progress-kpi strong{display:block;font-size:17px;line-height:1.35;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.progress-kpi small{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.progress-overline{display:block;font-size:10px;color:var(--muted);letter-spacing:.05em;font-weight:700}
+.progress-next{padding:10px 0 9px;border-top:1px solid var(--border)}
+.progress-next strong{font-size:14px;display:block;margin-top:4px}
+.progress-next p{font-size:12px;line-height:1.5;color:var(--muted);margin:6px 0 0}
+.progress-target-hint{font-size:12px;color:var(--muted);margin:8px 0}
+.progress-target-editor{border-top:1px solid var(--border);margin:7px 0 -5px}
+.progress-target-editor>summary{font-size:12px;color:var(--accent);cursor:pointer;padding:12px 0}
+.progress-target-editor-body{padding:4px 0 10px}
+.progress-target-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.progress-target-grid input{margin-top:5px}
+.progress-chart-card h2{font-size:16px;margin:0}
+.progress-chart-heading{display:flex;align-items:center;justify-content:space-between;gap:11px;flex-wrap:wrap}
+.progress-range{min-width:110px;margin:0}
+.progress-range select{font-size:13px;padding:7px;min-height:38px}
+.progress-chart-card .progress-chart{margin:13px 0}
+.progress-chart-card>.helper{margin-bottom:0}
+.progress-more-analysis,.progress-history-disclosure{border:1px solid var(--border);border-radius:12px;background:var(--surface);margin:12px 0;overflow:hidden}
+.progress-more-analysis>summary,.progress-history-disclosure>summary{padding:15px 16px;min-height:49px;font-weight:700;font-size:13px;cursor:pointer}
+.progress-more-analysis[open]>summary,.progress-history-disclosure[open]>summary{border-bottom:1px solid var(--border)}
+.progress-comparison-body,.progress-history-disclosure>.progress-session-list{padding:12px 12px 3px}
+.progress-history-disclosure>.helper{padding:0 12px 12px}
+.progress-effort-note{padding:0 4px}
+.progress-effort-note p{margin:4px 0 10px}
+.exercise-secondary-config{border:1px solid var(--border);border-radius:10px;background:var(--surface);overflow:hidden}
+.detail .exercise-secondary-config>summary{font-size:12px;line-height:1.4;color:var(--muted);padding:12px;cursor:pointer}
+.exercise-secondary-config-body{padding:6px 11px 12px}
+.exercise-warmup-list{padding:2px 12px 0}
+.exercise-warmup-row{display:flex;align-items:center;gap:9px;min-height:42px;font-size:13px;font-weight:500;color:var(--text);margin-bottom:0}
+.exercise-warmup-row input[type=checkbox]{width:18px;min-height:18px;flex:0 0 18px}
+.exercise-secondary-config>.helper{margin:0;padding:2px 12px 12px}
+@media(max-width:370px){.progress-kpi strong{font-size:15px}.progress-kpi{padding:9px}.progress-section-nav button{font-size:12px}.progress-chart-heading{align-items:flex-start}}
