@@ -748,8 +748,134 @@ async function restoreBackup(file) {
  await render();
  toast('Backup restored');
 }
+function templateDraftAddExercise(master){
+ if(!state.templateDraft||!master)return false;
+ if(state.templateDraft.exercises.length>=MAX_TEMPLATE_EXERCISES){toast('Template exercise limit reached');return false;}
+ state.templateDraft.exercises.push({exerciseId:master.id,name:master.name,sets:3});
+ state.templateDirty=true;
+ return true;
+}
+function readTemplateEditorValues(){
+ if(!state.templateDraft)return false;
+ const input=document.getElementById('template-name');
+ if(input)state.templateDraft.name=input.value;
+ for(const field of document.querySelectorAll('[data-template-sets]')){
+  const count=validSetCount(field.value),index=Number(field.dataset.templateSets);
+  if(count===null||!state.templateDraft.exercises[index]){
+   toast('Set counts must be whole numbers from 1 to 20');
+   field.focus();
+   return false;
+  }
+  state.templateDraft.exercises[index].sets=count;
+ }
+ return true;
+}
+async function saveWorkoutAsTemplate(session){
+ if(!session?.exercises?.length){toast('Add an exercise before saving a template');return false;}
+ const input=prompt('Save workout as template — name',session.name||'Workout template');
+ if(input===null)return false;
+ const name=cleanTemplateName(input);
+ if(!name){toast('Enter a template name');return false;}
+ const existing=state.templates.find(x=>normalizeName(x.name)===normalizeName(name));
+ if(existing&&!confirm('Replace the saved template "'+existing.name+'"?'))return false;
+ const template=templateFromWorkout({...session,name},existing?.id||newId());
+ if(existing)template.createdAt=existing.createdAt;
+ await put('templates',template);
+ await refreshData();
+ toast(existing?'Template updated':'Template saved');
+ return true;
+}
 async function action(name,el) {
  const s=state.session;
+ if(name==='show-templates'){state.session=null;state.tab='templates';state.justFinishedSessionId='';return render();}
+ if(name==='templates-home'){state.templateDraft=null;state.templateDirty=false;state.tab='home';return render();}
+ if(name==='new-template'){
+  const now=new Date().toISOString();
+  state.templateDraft={id:newId(),name:'New template',createdAt:now,updatedAt:now,exercises:[]};
+  state.templateDirty=false;state.tab='template-editor';return render();
+ }
+ if(name==='edit-template'){
+  const source=state.templates.find(x=>x.id===el.dataset.id);
+  if(!source)return;
+  state.templateDraft=sanitizedTemplate(source);
+  state.templateDirty=false;state.tab='template-editor';return render();
+ }
+ if(name==='templates-back'){
+  if(state.templateDirty&&!confirm('Discard unsaved template changes?'))return;
+  state.templateDraft=null;state.templateDirty=false;state.tab='templates';return render();
+ }
+ if(name==='template-add-saved-exercise'){
+  const master=state.exercises.find(ex=>ex.id===el.dataset.id);
+  if(templateDraftAddExercise(master))await render();
+  return;
+ }
+ if(name==='template-remove-exercise'){
+  if(!state.templateDraft)return;
+  const index=Number(el.dataset.index);
+  if(index>=0&&index<state.templateDraft.exercises.length){
+   state.templateDraft.exercises.splice(index,1);state.templateDirty=true;await render();
+  }
+  return;
+ }
+ if(name==='template-move-up'||name==='template-move-down'){
+  const entries=state.templateDraft?.exercises;
+  if(!entries)return;
+  const source=Number(el.dataset.index),dest=source+(name==='template-move-up'?-1:1);
+  if(source>=0&&source<entries.length&&dest>=0&&dest<entries.length){
+   [entries[source],entries[dest]]=[entries[dest],entries[source]];
+   state.templateDirty=true;await render();
+  }
+  return;
+ }
+ if(name==='template-save'){
+  if(!readTemplateEditorValues())return;
+  const draft=state.templateDraft;
+  if(!draft)return;
+  const name=cleanTemplateName(draft.name);
+  if(!name){toast('Enter a template name');document.getElementById('template-name')?.focus();return;}
+  if(!draft.exercises.length){toast('Add at least one exercise');return;}
+  const clash=state.templates.find(x=>x.id!==draft.id&&normalizeName(x.name)===normalizeName(name));
+  if(clash){toast('A template with this name already exists');return;}
+  const save=sanitizedTemplate({...draft,name,updatedAt:new Date().toISOString()});
+  await put('templates',save);
+  state.templateDraft=null;state.templateDirty=false;state.tab='templates';
+  await render();toast('Template saved');return;
+ }
+ if(name==='delete-template'){
+  const entry=state.templates.find(x=>x.id===el.dataset.id);
+  if(!entry||!confirm('Delete template "'+entry.name+'"? This will not delete any workouts.'))return;
+  await remove('templates',entry.id);await render();toast('Template deleted');return;
+ }
+ if(name==='start-from-template'||name==='append-template'){
+  const template=state.templates.find(x=>x.id===el.dataset.id);
+  if(!template)return;
+  await flushSave();
+  const active=s||state.sessions.find(x=>x.status==='active');
+  if(active&&name==='start-from-template'&&!confirm('Add this template to your unfinished workout?'))return;
+  if(active){
+   state.session=active;
+   state.session.exercises.push(...templateToEntries(template,state.exercises,newId));
+  }else{
+   const now=new Date().toISOString();
+   state.session={id:newId(),name:template.name,date:today(),status:'active',createdAt:now,intensity:'',fatigue:'',notes:'',
+    exercises:templateToEntries(template,state.exercises,newId),activities:[]};
+  }
+  state.expanded=new Set(state.session.exercises.slice(-1).map(x=>x.id));
+  state.moreOpen.clear();state.previousOpenId=null;state.tab='home';state.justFinishedSessionId='';
+  await saveSession();await render();toast('Template loaded');return;
+ }
+ if(name==='save-workout-template'){
+  if(!s)return;
+  await flushSave();
+  await saveWorkoutAsTemplate(s);return;
+ }
+ if(name==='save-finished-template'){
+  const finished=state.sessions.find(x=>x.id===state.justFinishedSessionId);
+  if(!finished)return;
+  if(await saveWorkoutAsTemplate(finished)){state.justFinishedSessionId='';await render();}
+  return;
+ }
+ if(name==='dismiss-finished-template'){state.justFinishedSessionId='';return render();}
  if(name==='start') {
   await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
@@ -869,7 +995,7 @@ async function action(name,el) {
  }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
- if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='finish'){const wasActive=s.status==='active';s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-set'){
   const x=s.exercises.find(x=>x.id===el.dataset.id);
   // The new set starts with no recorded measurements. Its weight, reps and
