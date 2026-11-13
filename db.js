@@ -1,5 +1,5 @@
 const NAME = 'fitnesslog-v1';
-const VERSION = 2;
+const VERSION = 3;
 let databasePromise;
 export function openDb() {
   if (!databasePromise) databasePromise = new Promise((resolve, reject) => {
@@ -9,6 +9,7 @@ export function openDb() {
       if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('exercises')) db.createObjectStore('exercises', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('templates')) db.createObjectStore('templates', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

@@ -2,6 +2,7 @@ import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {templateFromWorkout,templateToEntries,sanitizedTemplate,validSetCount,cleanTemplateName,templateSummary,MAX_TEMPLATE_EXERCISES} from './template-utils.js';
 import {CATALOG_CATEGORIES,planCatalogInstall} from './exercise-catalog.js';
 import {muscleChoices,muscleLabel,exercisePrimaryMuscle,singleMuscleExercise} from './muscle-utils.js';
 import {restPreference,setRestPreference,readRestTimer,startRestTimer,pauseRestTimer,resumeRestTimer,resetRestTimer,adjustRestTimer,markRestAlerted,restTimeLabel} from './rest-timer.js';
@@ -15,7 +16,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -134,6 +135,36 @@ function closeProgressExerciseSuggestions(restoreSelected=true){
   if(restoreSelected)input.value=input.defaultValue;
  }
 }
+function renderTemplateExerciseSuggestions(input,highlight=-1){
+ const list=document.getElementById('template-search-options');
+ if(!list)return;
+ const query=input.value.trim();
+ if(!query){closeTemplateExerciseSuggestions();return;}
+ const matches=exerciseMatches(query).slice(0,8);
+ const viewport=window.visualViewport;
+ const bottom=(viewport?.offsetTop??0)+(viewport?.height??window.innerHeight);
+ const rect=input.getBoundingClientRect();
+ const below=bottom-rect.bottom,above=rect.top-(viewport?.offsetTop??0);
+ const placeAbove=below<180&&above>below;
+ list.classList.toggle('above',placeAbove);
+ list.style.maxHeight=Math.min(300,Math.max(110,(placeAbove?above:below)-16))+'px';
+ list.hidden=false;
+ list.innerHTML=matches.length?matches.map((match,index)=>
+  '<button type="button" role="option" id="template-option-'+index+'" class="exercise-search-option'+(index===highlight?' highlighted':'')+
+   '" aria-selected="'+(index===highlight)+'" data-action="template-add-saved-exercise" data-id="'+e(match.exercise.id)+'"><span>'+e(match.exercise.name)+
+   '</span><small>'+(match.similar?'Similar spelling — check name':'Saved exercise')+'</small></button>').join(''):
+  '<div class="exercise-search-empty">No saved match. Use Add exercise to create this name.</div>';
+ list.dataset.highlight=String(highlight);
+ input.setAttribute('aria-expanded',String(matches.length>0));
+ if(highlight>=0&&highlight<matches.length)input.setAttribute('aria-activedescendant','template-option-'+highlight);
+ else input.removeAttribute('aria-activedescendant');
+}
+function closeTemplateExerciseSuggestions(){
+ const input=document.getElementById('template-exercise-name');
+ const list=document.getElementById('template-search-options');
+ if(list){list.hidden=true;list.innerHTML='';}
+ if(input){input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');}
+}
 async function resolveExerciseInput(name){
  const matches=exerciseMatches(name);
  const exact=matches.find(match=>normalizeName(match.exercise.name)===normalizeName(name));
@@ -222,7 +253,7 @@ async function linkExistingExercises() {
  if(changed)await refreshData();
 }
 
-async function refreshData() {state.sessions=(await list('sessions')).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''));state.exercises=await list('exercises');}
+async function refreshData() {state.sessions=(await list('sessions')).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''));state.exercises=await list('exercises');state.templates=(await list('templates')).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||'')||a.name.localeCompare(b.name));}
 let saveQueue=Promise.resolve();
 let saveTimer=null;
 async function saveSession() {
@@ -259,14 +290,14 @@ function photoUrl(photo) {
 async function render() {
  await refreshData();
  if(state.tab==='progress' && state.progressSection==='photos' && !state.session && !state.report && !state.photosLoaded)await refreshPhotos();
- document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab));
- title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings'})[state.tab]||'FitnessLog';
- main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings}[state.tab]||renderHome)();
+ document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab||(b.dataset.tab==='home'&&['templates','template-editor'].includes(state.tab))));
+ title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings',templates:'Templates','template-editor':'Edit template'})[state.tab]||'FitnessLog';
+ main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings,templates:renderTemplates,'template-editor':renderTemplateEditor}[state.tab]||renderHome)();
 }
 function renderHome() {
  const recent=state.sessions.slice(0,4);
  const latest=state.sessions.find(s=>s.status==='finished');
- return `<section class="card hero"><div class="eyebrow">YOUR NEXT SESSION</div><h2 style="font-size:26px;margin:10px 0">Train your way.</h2><p class="muted">Log just an exercise name, or track every set. Nothing is required.</p>${button('＋ Start workout','start','wide')}${state.sessions.some(s=>s.status==='active')?'<p class="helper">An unfinished workout is available to resume below.</p>':''}</section>
+ return `<section class="card hero"><div class="eyebrow">YOUR NEXT SESSION</div><h2 style="font-size:26px;margin:10px 0">Train your way.</h2><p class="muted">Log just an exercise name, or track every set. Nothing is required.</p>${button('＋ Start workout','start','wide')}<div class="template-home-actions">${button('Use a template','show-templates','secondary')}${button('Create template','new-template','secondary')}</div>${state.sessions.some(s=>s.status==='active')?'<p class="helper">An unfinished workout is available to resume below.</p>':''}</section>
  <div class="section-heading"><h2>Recent activity</h2><button class="btn ghost" data-action="history">View all</button></div>
  ${recent.length?recent.map(s=>`<div class="item"><div class="row between"><div class="grow"><div class="item-title">${e(s.name||'Workout')}</div><small>${displayDate(s.date)} · ${e(formatSummary(s))}</small></div><button class="btn small secondary" data-action="open" data-id="${s.id}">${s.status==='active'?'Resume':'Open'}</button></div></div>`).join(''):'<div class="card empty">No workouts yet. Start whenever you are ready.</div>'}
  <div class="grid2"><div class="stat"><span>Sessions logged</span><strong>${state.sessions.filter(s=>s.status==='finished').length}</strong></div><div class="stat"><span>Latest session</span><strong style="font-size:16px">${latest?displayDate(latest.date):'—'}</strong></div></div>`;
@@ -279,11 +310,13 @@ function renderWorkout() {
  <div style="margin-top:10px">${memoField('Session notes','session','notes',s.notes)}</div></details></div>
  <div class="section-heading"><h2>Resistance exercises</h2><span class="pill">${s.exercises.length}</span></div>
  ${s.exercises.map((x,i)=>renderExercise(x,i)).join('')}
+ ${state.templates.length?'<details class="card template-workout-picker"><summary>Add exercises from template</summary><div class="template-workout-picker-list">'+state.templates.map(t=>'<button type="button" class="btn secondary wide" data-action="append-template" data-id="'+e(t.id)+'">'+e(t.name)+' <span class="helper">· '+e(templateSummary(t))+'</span></button>').join('')+'</div></details>':''}
  <div class="card"><form data-form="add-exercise" class="stack"><div class="field exercise-search-field"><label for="exercise-entry-name">Add an exercise</label><input id="exercise-entry-name" name="exerciseName" placeholder="Search or type a new exercise" required autocomplete="off" spellcheck="false" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="exercise-search-options" aria-expanded="false"><div id="exercise-search-options" class="exercise-search-options" role="listbox" aria-label="Existing matching exercises" hidden></div></div><button class="btn secondary wide" type="submit">＋ Add exercise</button><p class="helper" style="margin:0">Select a saved exercise to keep its history linked. New names are saved automatically.</p></form></div>
  <div class="section-heading"><h2>Cardio and sauna</h2></div>${s.activities.map((x,i)=>renderActivity(x,i)).join('')}
  <div class="card"><div class="grid2">${button('＋ Cardio','add-cardio','secondary')}${button('＋ Sauna','add-sauna','secondary')}</div></div>
  <div class="card"><div class="stack">
  ${button(s.status==='active'?'Finish workout':'Save changes','finish','wide')}
+ ${button('Save as template','save-workout-template','secondary wide')}
  ${button('Close without finishing','close-workout','secondary wide')}
  </div><p class="helper">Changes save automatically on your device. You can edit this session later.</p>
  <div class="delete-workout-area">
@@ -542,6 +575,7 @@ function renderHistory() {
  return `<div class="history-intro">
   <p class="muted">Review your training records. Select any workout to see its sets and make changes.</p>
  </div>
+ ${state.justFinishedSessionId?'<div class="card template-after-finish"><strong>Workout saved</strong><p class="helper">Want to reuse these exercises and set counts?</p><div class="row wrap"><button class="btn secondary" data-action="save-finished-template">Save as template</button><button class="btn ghost" data-action="dismiss-finished-template">Not now</button></div></div>':''}
  <div class="history-view-toggle" role="group" aria-label="Workout history view">
   <button type="button" data-action="history-view" data-view="list" aria-pressed="${isList}" class="${isList?'active':''}">List</button>
   <button type="button" data-action="history-view" data-view="calendar" aria-pressed="${!isList}" class="${!isList?'active':''}">Calendar</button>
@@ -563,6 +597,48 @@ function renderHistory() {
    <p class="helper">For an unfiltered, complete JSON backup, use Settings. Missing training measurements remain blank.</p>
   </div>
  </details>`;
+}
+function renderTemplates(){
+ const list=state.templates.map(template=>
+  '<div class="item template-list-item"><div class="template-list-head"><div class="grow"><strong>'+e(template.name)+'</strong>'+
+   '<p class="helper">'+e(templateSummary(template))+'</p></div>'+
+   '<button type="button" class="btn small" data-action="start-from-template" data-id="'+e(template.id)+'">Start</button></div>'+
+   '<div class="template-list-actions">'+
+    '<button type="button" class="btn ghost small" data-action="edit-template" data-id="'+e(template.id)+'">Edit</button>'+
+    '<button type="button" class="btn ghost small" data-action="delete-template" data-id="'+e(template.id)+'">Delete</button>'+
+   '</div></div>').join('');
+ return '<button type="button" class="btn ghost small" data-action="templates-home">← Home</button>'+
+  '<div class="card"><h2>Workout templates</h2>'+
+   '<p class="helper">Start a new workout with preset exercises and set counts, or create and edit templates without logging a workout. Every new set begins blank.</p>'+
+   '<button type="button" class="btn wide" data-action="new-template">＋ Create template</button></div>'+
+  (state.templates.length?'<div class="section-heading"><h2>Saved templates</h2><span class="pill">'+state.templates.length+'</span></div>'+list:
+   '<div class="card empty">No templates saved yet. Create one here, or save a workout as a template.</div>');
+}
+function renderTemplateEditor(){
+ const template=state.templateDraft;
+ if(!template)return '<div class="card">No template is open.</div>';
+ const count=template.exercises?.length||0;
+ const exerciseRows=(template.exercises||[]).map((entry,index)=>
+  '<div class="item template-editor-row"><div class="template-editor-row-head"><strong>'+e(entry.name)+'</strong>'+
+   '<button type="button" class="btn ghost small" data-action="template-remove-exercise" data-index="'+index+'" aria-label="Remove '+e(entry.name)+'">Remove</button></div>'+
+   '<div class="template-editor-row-bottom"><label>Sets<input type="number" inputmode="numeric" min="1" max="20" step="1" data-template-sets="'+index+'" value="'+e(entry.sets)+'" aria-label="Number of sets for '+e(entry.name)+'"></label>'+
+   '<div class="template-order-buttons"><button type="button" class="btn secondary small" data-action="template-move-up" data-index="'+index+'" aria-label="Move '+e(entry.name)+' earlier" '+(index===0?'disabled':'')+'>↑</button>'+
+   '<button type="button" class="btn secondary small" data-action="template-move-down" data-index="'+index+'" aria-label="Move '+e(entry.name)+' later" '+(index===count-1?'disabled':'')+'>↓</button></div></div></div>'
+ ).join('');
+ const search='<form data-form="template-add-exercise" class="template-add-exercise"><div class="field exercise-search-field template-search-field">'+
+  '<label for="template-exercise-name">Add an exercise</label>'+
+  '<input id="template-exercise-name" name="exerciseName" placeholder="Search or type a new exercise" required autocomplete="off" spellcheck="false" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="template-search-options" aria-expanded="false">'+
+  '<div id="template-search-options" class="exercise-search-options" role="listbox" aria-label="Exercises for template" hidden></div></div>'+
+  '<button class="btn secondary wide" type="submit">＋ Add exercise</button></form>';
+ return '<button type="button" class="btn ghost small" data-action="templates-back">← Templates</button>'+
+  '<div class="card template-editor-heading"><h2>'+e(template.createdAt&&state.templates.some(x=>x.id===template.id)?'Edit template':'New template')+'</h2>'+
+   '<label class="field" for="template-name">Template name<input id="template-name" type="text" maxlength="100" value="'+e(template.name)+'" placeholder="e.g. Push day"></label>'+
+   '<p class="helper">Only exercise order and set counts are saved. Creating a template does not log a workout.</p></div>'+
+  '<div class="section-heading"><h2>Exercises</h2><span class="pill">'+count+'</span></div>'+
+  (exerciseRows||'<div class="card empty">No exercises yet. Add one below.</div>')+
+  (count<MAX_TEMPLATE_EXERCISES?'<div class="card">'+search+'</div>':'<p class="helper">Template exercise limit reached.</p>')+
+  '<div class="card template-editor-footer"><button type="button" class="btn wide" data-action="template-save">Save template</button>'+
+   '<button type="button" class="btn secondary wide" data-action="templates-back">Cancel</button></div>';
 }
 function renderProgress() {
  return renderProgressView({state,e,displayDate,photoUrl});
@@ -680,14 +756,16 @@ async function restoreBackup(file) {
  const parsed=JSON.parse(await file.text());
  if(parsed.app!=='FitnessLog'||!Array.isArray(parsed.sessions)||!Array.isArray(parsed.exercises))throw Error('Unsupported backup format');
  if(parsed.photos!==undefined&&!Array.isArray(parsed.photos))throw Error('Invalid photo list');
+ if(parsed.templates!==undefined&&!Array.isArray(parsed.templates))throw Error('Invalid template list');
  const hasPhotoPayload=Array.isArray(parsed.photos);
  const question=hasPhotoPayload?
-  'Restore this backup? This will REPLACE all workouts, exercise library records, and saved progress photos on this device.':
-  'Restore this workout backup? This will REPLACE workouts and exercise library records. Your existing progress photos will be kept.';
+  'Restore this backup? This will REPLACE workouts, exercise library records, and photos, plus saved templates if the backup contains them.':
+  'Restore this workout backup? This will REPLACE workouts and exercise library records. Existing photos and templates absent from the backup will be kept.';
  if(!confirm(question))return;
  // Validate and decode every optional photo before starting the atomic DB transaction.
  const photos=hasPhotoPayload?await restorePhotos(parsed.photos):null;
  const stores={sessions:parsed.sessions,exercises:parsed.exercises.map(singleMuscleExercise)};
+ if(Array.isArray(parsed.templates))stores.templates=parsed.templates.map(sanitizedTemplate).filter(Boolean);
  if(photos!==null)stores.photos=photos;
  await replaceStores(stores);
  for(const url of photoUrls.values())URL.revokeObjectURL(url);
@@ -698,12 +776,147 @@ async function restoreBackup(file) {
  state.tab='home';
  state.libraryDetail=null;
  state.progressExercise='';
+ state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';
  await linkExistingExercises();
  await render();
  toast('Backup restored');
 }
+function templateDraftAddExercise(master){
+ if(!state.templateDraft||!master)return false;
+ if(state.templateDraft.exercises.length>=MAX_TEMPLATE_EXERCISES){toast('Template exercise limit reached');return false;}
+ state.templateDraft.exercises.push({exerciseId:master.id,name:master.name,sets:3});
+ state.templateDirty=true;
+ return true;
+}
+function readTemplateEditorValues(){
+ if(!state.templateDraft)return false;
+ const input=document.getElementById('template-name');
+ if(input)state.templateDraft.name=input.value;
+ for(const field of document.querySelectorAll('[data-template-sets]')){
+  const count=validSetCount(field.value),index=Number(field.dataset.templateSets);
+  if(count===null||!state.templateDraft.exercises[index]){
+   toast('Set counts must be whole numbers from 1 to 20');
+   field.focus();
+   return false;
+  }
+  state.templateDraft.exercises[index].sets=count;
+ }
+ return true;
+}
+async function saveWorkoutAsTemplate(session){
+ if(!session?.exercises?.length){toast('Add an exercise before saving a template');return false;}
+ const input=prompt('Save workout as template — name',session.name||'Workout template');
+ if(input===null)return false;
+ const name=cleanTemplateName(input);
+ if(!name){toast('Enter a template name');return false;}
+ const existing=state.templates.find(x=>normalizeName(x.name)===normalizeName(name));
+ if(existing&&!confirm('Replace the saved template "'+existing.name+'"?'))return false;
+ const template=templateFromWorkout({...session,name},existing?.id||newId());
+ if(existing)template.createdAt=existing.createdAt;
+ await put('templates',template);
+ await refreshData();
+ toast(existing?'Template updated':'Template saved');
+ return true;
+}
 async function action(name,el) {
  const s=state.session;
+ if(name==='show-templates'){state.session=null;state.tab='templates';state.justFinishedSessionId='';return render();}
+ if(name==='templates-home'){state.templateDraft=null;state.templateDirty=false;state.tab='home';return render();}
+ if(name==='new-template'){
+  const now=new Date().toISOString();
+  state.templateDraft={id:newId(),name:'New template',createdAt:now,updatedAt:now,exercises:[]};
+  state.templateDirty=false;state.tab='template-editor';return render();
+ }
+ if(name==='edit-template'){
+  const source=state.templates.find(x=>x.id===el.dataset.id);
+  if(!source)return;
+  state.templateDraft=sanitizedTemplate(source);
+  state.templateDirty=false;state.tab='template-editor';return render();
+ }
+ if(name==='templates-back'){
+  if(state.templateDirty&&!confirm('Discard unsaved template changes?'))return;
+  state.templateDraft=null;state.templateDirty=false;state.tab='templates';return render();
+ }
+ if(name==='template-add-saved-exercise'){
+  const master=state.exercises.find(ex=>ex.id===el.dataset.id);
+  if(templateDraftAddExercise(master))await render();
+  return;
+ }
+ if(name==='template-remove-exercise'){
+  if(!state.templateDraft)return;
+  const index=Number(el.dataset.index);
+  if(index>=0&&index<state.templateDraft.exercises.length){
+   state.templateDraft.exercises.splice(index,1);state.templateDirty=true;await render();
+  }
+  return;
+ }
+ if(name==='template-move-up'||name==='template-move-down'){
+  const entries=state.templateDraft?.exercises;
+  if(!entries)return;
+  const source=Number(el.dataset.index),dest=source+(name==='template-move-up'?-1:1);
+  if(source>=0&&source<entries.length&&dest>=0&&dest<entries.length){
+   [entries[source],entries[dest]]=[entries[dest],entries[source]];
+   state.templateDirty=true;await render();
+  }
+  return;
+ }
+ if(name==='template-save'){
+  if(!readTemplateEditorValues())return;
+  const draft=state.templateDraft;
+  if(!draft)return;
+  const name=cleanTemplateName(draft.name);
+  if(!name){toast('Enter a template name');document.getElementById('template-name')?.focus();return;}
+  if(!draft.exercises.length){toast('Add at least one exercise');return;}
+  const clash=state.templates.find(x=>x.id!==draft.id&&normalizeName(x.name)===normalizeName(name));
+  if(clash){toast('A template with this name already exists');return;}
+  const save=sanitizedTemplate({...draft,name,updatedAt:new Date().toISOString()});
+  await put('templates',save);
+  state.templateDraft=null;state.templateDirty=false;state.tab='templates';
+  await render();toast('Template saved');return;
+ }
+ if(name==='delete-template'){
+  const entry=state.templates.find(x=>x.id===el.dataset.id);
+  if(!entry||!confirm('Delete template "'+entry.name+'"? This will not delete any workouts.'))return;
+  await remove('templates',entry.id);await render();toast('Template deleted');return;
+ }
+ if(name==='start-from-template'||name==='append-template'){
+  const template=state.templates.find(x=>x.id===el.dataset.id);
+  if(!template)return;
+  await flushSave();
+  const active=s||state.sessions.find(x=>x.status==='active');
+  if(active&&name==='start-from-template'&&!confirm('Add this template to your unfinished workout?'))return;
+  // Reconnect stale template exercise IDs after library edits or old restores.
+  const source=sanitizedTemplate(template);
+  for(const item of source.exercises){
+   if(state.exercises.some(ex=>ex.id===item.exerciseId))continue;
+   const resolved=await ensureExercise(item.name);
+   if(resolved)item.exerciseId=resolved.id;
+  }
+  const newEntries=templateToEntries(source,state.exercises,newId);
+  if(active){
+   state.session=active;
+   state.session.exercises.push(...newEntries);
+  }else{
+   const now=new Date().toISOString();
+   state.session={id:newId(),name:template.name,date:today(),status:'active',createdAt:now,intensity:'',fatigue:'',notes:'',
+    exercises:newEntries,activities:[]};
+  }
+  state.expanded=new Set(state.session.exercises.slice(-1).map(x=>x.id));
+  state.moreOpen.clear();state.previousOpenId=null;state.tab='home';state.justFinishedSessionId='';
+  await saveSession();await render();toast('Template loaded');return;
+ }
+ if(name==='save-workout-template'){
+  if(!s)return;
+  await flushSave();
+  await saveWorkoutAsTemplate(s);return;
+ }
+ if(name==='save-finished-template'){
+  const finished=state.sessions.find(x=>x.id===state.justFinishedSessionId);
+  if(!finished)return;
+  if(await saveWorkoutAsTemplate(finished)){state.justFinishedSessionId='';await render();}
+  return;
+ }
+ if(name==='dismiss-finished-template'){state.justFinishedSessionId='';return render();}
  if(name==='start') {
   await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
@@ -823,7 +1036,7 @@ async function action(name,el) {
  }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
- if(name==='finish'){s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='finish'){const wasActive=s.status==='active';s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-set'){
   const x=s.exercises.find(x=>x.id===el.dataset.id);
   // The new set starts with no recorded measurements. Its weight, reps and
@@ -843,13 +1056,13 @@ async function action(name,el) {
  if(name==='delete-library'){if(!confirm('Delete this custom exercise? Historical workouts will remain.'))return;await remove('exercises',el.dataset.id);return render();}
  if(name==='export-json'||name==='full-backup'){
   const full=name==='full-backup'||(!state.start&&!state.end);
-  download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises},null,2),'application/json');
+  download('fitnesslog-backup-'+today()+'.json',JSON.stringify({app:'FitnessLog',version:3,createdAt:new Date().toISOString(),sessions:full?state.sessions:selected(),exercises:state.exercises,...(full?{templates:state.templates}:{})},null,2),'application/json');
   return toast('Workout backup downloaded (photos excluded)');
  }
  if(name==='export-photos-backup'){
   const photos=await list('photos');
   if(!confirm('Include '+photos.length+' private progress photos in the downloaded JSON backup? This file may be large and contain sensitive photographs.'))return;
-  const payload={app:'FitnessLog',version:2,createdAt:new Date().toISOString(),sessions:state.sessions,exercises:state.exercises,photos:await photosForBackup(photos)};
+  const payload={app:'FitnessLog',version:3,createdAt:new Date().toISOString(),sessions:state.sessions,exercises:state.exercises,templates:state.templates,photos:await photosForBackup(photos)};
   download('fitnesslog-with-photos-'+today()+'.json',JSON.stringify(payload),'application/json');
   return toast('Photo-inclusive backup downloaded');
  }
@@ -868,7 +1081,7 @@ function findScope(scope){
  if(kind==='set')return state.session.exercises.find(x=>x.id===id)?.sets.find(x=>x.id===setId);
 }
 document.addEventListener('click',async ev=>{
- const nav=ev.target.closest('[data-tab]');if(nav){await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.moreOpen.clear();state.libraryDetail=null;await render();return;}
+ const nav=ev.target.closest('[data-tab]');if(nav){if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.tab=nav.dataset.tab;state.report=false;state.session=null;state.expanded.clear();state.moreOpen.clear();state.libraryDetail=null;await render();return;}
  const el=ev.target.closest('[data-action]');if(!el)return;
  try{await action(el.dataset.action,el);}catch(error){console.error(error);toast('Unable to complete action');}
 });
@@ -892,6 +1105,8 @@ function validateEntry(input,value,showError=false) {
 document.addEventListener('input',ev=>{
  if(ev.target.id==='exercise-entry-name')renderExerciseSuggestions(ev.target);
  if(ev.target.id==='progress-exercise-search')renderProgressExerciseSuggestions(ev.target);
+ if(ev.target.id==='template-exercise-name')renderTemplateExerciseSuggestions(ev.target);
+ if(ev.target.id==='template-name'&&state.templateDraft){state.templateDraft.name=ev.target.value;state.templateDirty=true;}
  if(ev.target.id==='library-filter'){
   const query=normalizeName(ev.target.value);
   let count=0;
@@ -913,6 +1128,7 @@ document.addEventListener('input',ev=>{
 });
 document.addEventListener('focusin',ev=>{
  if(ev.target.id==='exercise-entry-name'&&ev.target.value.trim())renderExerciseSuggestions(ev.target);
+ if(ev.target.id==='template-exercise-name'&&ev.target.value.trim())renderTemplateExerciseSuggestions(ev.target);
  if(ev.target.id==='progress-exercise-search'&&ev.target.value.trim())
   renderProgressExerciseSuggestions(ev.target);
 });
@@ -949,9 +1165,25 @@ document.addEventListener('keydown',ev=>{
   if(options.length)options[current>=0&&current<options.length?current:0].click();
  }
 });
+document.addEventListener('keydown',ev=>{
+ if(ev.target.id!=='template-exercise-name')return;
+ const list=document.getElementById('template-search-options');
+ const options=Array.from(list?.querySelectorAll('[data-action="template-add-saved-exercise"]')||[]);
+ const current=Number(list?.dataset.highlight??-1);
+ if((ev.key==='ArrowDown'||ev.key==='ArrowUp')&&options.length){
+  ev.preventDefault();
+  const next=ev.key==='ArrowDown'?(current+1)%options.length:(current<=0?options.length-1:current-1);
+  renderTemplateExerciseSuggestions(ev.target,next);
+ }else if(ev.key==='Escape'){
+  ev.preventDefault();closeTemplateExerciseSuggestions();
+ }else if(ev.key==='Enter'&&current>=0&&current<options.length&&!list?.hidden){
+  ev.preventDefault();options[current].click();
+ }
+});
 document.addEventListener('click',ev=>{
  if(!ev.target.closest('.exercise-search-field'))closeExerciseSuggestions();
  if(!ev.target.closest('.progress-exercise-search-field'))closeProgressExerciseSuggestions();
+ if(!ev.target.closest('.template-search-field'))closeTemplateExerciseSuggestions();
 });
 document.addEventListener('input',ev=>{
  if(ev.target.id==='photo-overlay-range'){
@@ -992,6 +1224,18 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(ev.target.dataset?.templateSets!==undefined&&state.templateDraft){
+  const index=Number(ev.target.dataset.templateSets),count=validSetCount(ev.target.value);
+  if(!state.templateDraft.exercises[index])return;
+  if(count===null){
+   toast('Enter a whole number from 1 to 20');
+   ev.target.value=state.templateDraft.exercises[index].sets;
+  }else{
+   state.templateDraft.exercises[index].sets=count;
+   state.templateDirty=true;
+  }
+  return;
+ }
  if(ev.target.dataset?.progressTarget){
   const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.progressTarget);
   if(!ex)return;
@@ -1108,6 +1352,15 @@ document.addEventListener('submit',async ev=>{
   }finally{if(submitButton?.isConnected)submitButton.disabled=false;}
   return;
  }
+ if(form.dataset.form==='template-add-exercise'){
+  if(!state.templateDraft)return;
+  const name=String(data.get('exerciseName')||'').trim();
+  if(!name)return;
+  const master=await resolveExerciseInput(name);
+  if(!master){document.getElementById('template-exercise-name')?.focus();return;}
+  if(templateDraftAddExercise(master))await render();
+  return;
+ }
  if(form.dataset.form==='add-exercise'){
   const name=String(data.get('exerciseName')||'').trim();if(!name)return;
   const master=await resolveExerciseInput(name);
@@ -1124,7 +1377,7 @@ document.addEventListener('submit',async ev=>{
   await render();toast(wasSaved?'Exercise already exists':'Exercise saved');
  }
 });
-$('#settings-button').addEventListener('click',async()=>{await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
+$('#settings-button').addEventListener('click',async()=>{if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
 (async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}try{await removeLegacySecondaryMuscles();}catch(error){console.warn('Exercise tag cleanup could not finish',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
 document.addEventListener('visibilitychange',refreshRestTimers);

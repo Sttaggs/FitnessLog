@@ -40,6 +40,10 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Export tools are collapsible and placed below workout history
 - Delete a workout from the bottom of its editor, with confirmation
 - Create, resume, edit, and delete workout sessions
+- Create reusable workout templates without logging a workout; add, remove, reorder exercises and choose a set count for each
+- Save any active or completed workout as a template, directly from its editor or immediately after finishing
+- Start a workout using any saved template, or add the exercises from a template into an unfinished workout
+- Applying a template creates new blank weight, repetition and RPE fields; only exercise identities, order and set counts are reused. Templates never count toward completed sessions or progression statistics
 - Add exercises in one step; new names are automatically saved and linked to their previous and future workout records
 - On first launch after this update, a built-in starter catalog adds the owner's 106 supplied exercise entries as 105 distinct saved exercises. Close-grip bench press appeared under both Chest and Triceps and is stored only once, with Chest as its single assigned muscle group.
 - Starter catalog groups: Chest, Shoulders, Back, Biceps, Triceps, Quadriceps, Hamstrings and Glutes, Core and Mobility, and Cardio and Conditioning. Built-in categories are editable descriptions, not a rigid training program. Cardio and mobility activities are not assigned muscle-set volume unless given a primary muscle.
@@ -70,6 +74,14 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Export date-filtered CSV and JSON; printable PDF report via browser print-to-PDF
 - PWA install support and offline shell cache
 
+
+## Workout templates
+
+Templates are stored in a dedicated local IndexedDB store. From Home, choose **Use a template** to view saved templates and start a workout from one, or **Create template** to build one without recording a session. Each template is an ordered list of saved exercise IDs/names and set counts. The editor supports searching existing exercises, creating new saved exercise names, changing set counts (1–20), moving exercises up or down, and removing exercises. You can edit or delete templates without deleting workout records.
+
+In an active or previously completed workout, use **Save as template**. Immediately after finishing a workout, a small History shortcut also allows saving the just-finished workout as a template. If a template name already exists, updating it requires confirmation. When a template is started, set rows have blank weight, repetitions, and RPE; they are new session entries and are fully editable, with all the existing exercise and set editing controls. If an unfinished workout already exists, starting from a template asks to append the exercises rather than overwriting it.
+
+Templates are not workouts and are excluded from History, Progress, and session counts. The full workout JSON backup and photo-inclusive backup include templates. Restoring a newer backup replaces templates only when that backup has a templates array; restoring an older backup without the field retains templates already stored on the device. CSV and printable workout reports remain session-focused.
 
 ## Exercise catalog
 
