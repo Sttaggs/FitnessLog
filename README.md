@@ -40,6 +40,7 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Export tools are collapsible and placed below workout history
 - Delete a workout from the bottom of its editor, with confirmation
 - Create, resume, edit, and delete workout sessions
+- Automatically save workout start/end times, display live elapsed duration and allow optional corrections without affecting logged sets
 - Create reusable workout templates without logging a workout; add, remove, reorder exercises and choose a set count for each
 - Save any active or completed workout as a template, directly from its editor or immediately after finishing
 - Start a workout using any saved template, or add the exercises from a template into an unfinished workout
@@ -88,6 +89,16 @@ For consistent analytics, advanced sequences (including their additional drop, l
 Templates remember the technique and number of stages for each set, together with superset links. Advanced options in the standalone template editor remain collapsed by default. Starting a workout from a template generates new set and stage IDs with **blank weight, repetitions and RPE**, while superset pairing is remapped to unique IDs for the new workout.
 
 All advanced stage measurements persist in local workout records and full JSON backups; CSV exports now add set-method, stage and superset columns, and printed reports include the stage details. Legacy standard sets and templates remain supported. No advanced technique is ever inserted into a workout unless you explicitly choose it.
+
+## Workout duration and timestamps
+
+Starting a new workout, including one created from a saved template, automatically stores its actual **start time** on the device. A small live elapsed-time clock appears at the top of the active workout alongside the recorded start time. Closing the workout screen, backgrounding the app, switching tabs, or reopening the PWA does not reset the start timestamp. The displayed duration is recalculated from the saved timestamp and the device's current clock rather than relying on uninterrupted JavaScript intervals.
+
+Selecting **Finish workout** stores the actual end time and freezes the elapsed duration. You can see the saved start, end and duration when reopening a completed workout; duration is also shown alongside the date in workout History, and time fields are included in CSV and printable/PDF reports. Full JSON backups already contain the session fields and therefore retain the timestamps.
+
+**Adjust start time** (active workout) or **Adjust start / end times** (completed workout) is an optional disclosure for correcting missed timing. Fields use the device's local date and time but store absolute ISO 8601 timestamps. End must be at or after start; active starts cannot be in the future. Correcting time never changes exercise, set, template or photo records. Previously completed workouts that lack times remain explicitly unmeasured until corrected; the app does not invent historical timings. Older unfinished workouts without timing begin recording from the first time they are opened in this updated version.
+
+Workout duration measures total elapsed wall-clock time, including rest periods and time spent away from the app. It is not an active lifting-time or time-under-tension measurement. Existing exercise rest timers continue operating independently.
 
 ## Workout templates
 

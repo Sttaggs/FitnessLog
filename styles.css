@@ -337,3 +337,18 @@
 .detail .advanced-set-panel>summary{display:flex;align-items:center;justify-content:space-between}
 .detail .advanced-set-panel>summary::after,.detail .exercise-secondary-config>summary::after{content:'⌄';float:right;color:var(--muted);margin-left:8px}
 .detail .advanced-set-panel[open]>summary::after,.detail .exercise-secondary-config[open]>summary::after{transform:rotate(180deg)}
+
+
+/* Minimal live workout clock with persisted absolute start and end times. */
+.workout-duration-row{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--border);background:var(--surface2);border-radius:12px;padding:11px 13px;margin:0 0 10px}
+.workout-duration-main{display:grid;gap:3px;min-width:0}
+.workout-duration-main small{font-size:11px;color:var(--muted);font-weight:650}
+.workout-duration-main strong{font-size:23px;line-height:1.2;letter-spacing:.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.workout-time-stamps{display:grid;gap:5px;text-align:right;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.workout-time-editor{margin:0 0 13px}
+.workout-time-editor>summary{font-size:12px;color:var(--muted);cursor:pointer;padding:5px 2px 9px;min-height:30px}
+.workout-time-editor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:5px 0}
+.workout-time-editor-fields label{min-width:0}
+.workout-time-editor-fields input{font-size:15px;min-width:0;max-width:100%;color-scheme:dark}
+.workout-time-editor .helper{margin:5px 0 8px}
+@media(max-width:420px){.workout-time-editor-fields{grid-template-columns:1fr}.workout-duration-main strong{font-size:21px}}

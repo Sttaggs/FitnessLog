@@ -2,6 +2,7 @@ import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {ensureWorkoutStart,finishWorkoutTiming,workoutElapsedMs,clockDuration,shortDuration,localTimeLabel,localDateTimeValue,isoFromLocalDateTime,changeWorkoutTime} from './workout-timer.js';
 import {ADVANCED_TYPES,isAdvancedSet,setTechnique,techniqueLabel,newAdvancedSet,setTechniqueOnExisting,hasRecordedStages,MAX_STAGES,linkSuperset,removeSuperset,cleanSupersets,normalizeSetPlan,templatePlanForSet} from './advanced-utils.js';
 import {renderAdvancedSetPanel,renderAdvancedTools,renderSupersetSettings,supersetLabel} from './advanced-ui.js';
 import {renderTemplateExerciseRow} from './template-advanced-ui.js';
@@ -19,7 +20,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), workoutTimeOpen:false, advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -305,9 +306,33 @@ function renderHome() {
  ${recent.length?recent.map(s=>`<div class="item"><div class="row between"><div class="grow"><div class="item-title">${e(s.name||'Workout')}</div><small>${displayDate(s.date)} · ${e(formatSummary(s))}</small></div><button class="btn small secondary" data-action="open" data-id="${s.id}">${s.status==='active'?'Resume':'Open'}</button></div></div>`).join(''):'<div class="card empty">No workouts yet. Start whenever you are ready.</div>'}
  <div class="grid2"><div class="stat"><span>Sessions logged</span><strong>${state.sessions.filter(s=>s.status==='finished').length}</strong></div><div class="stat"><span>Latest session</span><strong style="font-size:16px">${latest?displayDate(latest.date):'—'}</strong></div></div>`;
 }
+function renderWorkoutTimer(session){
+ const elapsed=workoutElapsedMs(session);
+ const hasStart=Boolean(session.startTime),hasEnd=Boolean(session.endTime);
+ return '<div class="workout-duration-row" aria-label="Workout duration">'+
+  '<div class="workout-duration-main"><small>'+(session.status==='active'?'Elapsed workout time':'Workout duration')+'</small>'+
+  '<strong data-workout-elapsed>'+clockDuration(elapsed)+'</strong></div>'+
+  '<div class="workout-time-stamps">'+
+  '<span>Start '+e(localTimeLabel(session.startTime))+'</span>'+
+  '<span>End '+e(localTimeLabel(session.endTime))+'</span></div></div>'+
+  '<details class="workout-time-editor" data-workout-time-editor '+(state.workoutTimeOpen?'open':'')+'>'+
+   '<summary>Adjust '+(session.status==='active'?'start time':'start / end times')+'</summary>'+
+   '<div class="workout-time-editor-fields">'+
+    '<label>Start<input type="datetime-local" step="60" data-workout-time-field="startTime" value="'+e(localDateTimeValue(session.startTime))+'"></label>'+
+    (session.status==='finished'?'<label>End<input type="datetime-local" step="60" data-workout-time-field="endTime" value="'+e(localDateTimeValue(session.endTime))+'"></label>':'')+
+   '</div><p class="helper">'+
+    (hasStart||hasEnd?'Adjust these if you started late or forgot to finish.':'No times were recorded for this older workout. Enter start and end times to calculate its duration.')+
+   '</p></details>';
+}
+function refreshWorkoutDuration(){
+ const display=main.querySelector('[data-workout-elapsed]');
+ if(!display||!state.session)return;
+ display.textContent=clockDuration(workoutElapsedMs(state.session));
+}
 function renderWorkout() {
  const s=state.session;
  return `<div class="card"><div class="row between" style="margin-bottom:14px"><span class="badge">${s.status==='active'?'In progress':'Saved session'}</span><button class="btn ghost small" data-action="close-workout">← Back</button></div>
+ ${renderWorkoutTimer(s)}
  <div class="field-row">${textField('Workout name','session','name',s.name||'Workout')}${textField('Date','session','date',s.date,'date')}</div>
  <details class="session-details"><summary>Workout intensity, fatigue and notes</summary><div class="field-row" style="margin-top:10px">${numberField('Overall intensity / 10','session','intensity',s.intensity,'min="1" max="10"')}${numberField('Overall fatigue / 10','session','fatigue',s.fatigue,'min="1" max="10"')}</div>
  <div style="margin-top:10px">${memoField('Session notes','session','notes',s.notes)}</div></details></div>
@@ -516,13 +541,14 @@ function historyMetrics(session) {
 }
 function historyEntry(session) {
  const m=historyMetrics(session);
+ const duration=shortDuration(workoutElapsedMs(session));
  const metric=(label,value,qualifier='')=>'<div class="history-metric"><span>'+e(label)+'</span><strong>'+e(value)+'</strong>'+ (qualifier?'<small>'+e(qualifier)+'</small>':'')+'</div>';
  const intensity=(session.intensity!==''&&session.intensity!=null)?session.intensity+'/10':'—';
  const fatigue=(session.fatigue!==''&&session.fatigue!=null)?session.fatigue+'/10':'—';
  return `<button type="button" class="history-entry" data-action="open" data-id="${session.id}" aria-label="Review ${e(session.name||'Workout')} on ${e(displayDate(session.date))}">
  <div class="row between history-entry-head">
   <div class="grow"><div class="item-title">${e(session.name||'Workout')}</div>
-  <div class="caption">${e(displayDate(session.date))} · ${m.exercises} exercises${m.cardio?' · '+m.cardio+' cardio':''}${m.cardioMinutes?' · '+m.cardioMinutes+' cardio min':''}</div></div>
+  <div class="caption">${e(displayDate(session.date))}${duration?' · '+e(duration):''} · ${m.exercises} exercises${m.cardio?' · '+m.cardio+' cardio':''}${m.cardioMinutes?' · '+m.cardioMinutes+' cardio min':''}</div></div>
   <span class="history-status ${session.status==='finished'?'completed':'unfinished'}">${session.status==='finished'?'Completed':'In progress'}</span>
  </div>
  <div class="history-metrics">
@@ -734,6 +760,7 @@ function renderReport() {
  <h2>FitnessLog training report</h2><p>${e(state.start||'All dates')} through ${e(state.end||'present')}</p>
  <p class="muted">${ss.length} workouts · Export created ${displayDate(today())}. Blank fields were not recorded.</p>
  ${ss.map(s=>`<section style="margin:22px 0"><h3>${e(s.name)} — ${displayDate(s.date)}</h3>
+ <p>Workout time: ${e(localTimeLabel(s.startTime))}–${e(localTimeLabel(s.endTime))} · Duration: ${e(shortDuration(workoutElapsedMs(s))||'Not recorded')}</p>
  <p>Overall intensity: ${e(s.intensity||'Not recorded')} · Overall fatigue: ${e(s.fatigue||'Not recorded')}</p>
  <p>${e(s.notes||'')}</p>
  <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RPE)</th></tr></thead><tbody>
@@ -748,21 +775,22 @@ function renderReport() {
 function download(name, body, mime) {const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function csvValue(x) {return '"'+String(x??'').replace(/"/g,'""')+'"';}
 function exportCsv() {
- const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes','set_method','stage','superset']];
+ const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes','set_method','stage','superset','start_time','end_time','duration_seconds']];
+ const timingColumns=session=>[session.startTime||'',session.endTime||'',workoutElapsedMs(session)===null?'':Math.floor(workoutElapsedMs(session)/1000)];
  for(const s of selected()) {
   for(const x of s.exercises||[]) {
    const sets=recordedSets(x);
    if(sets.length)sets.forEach((set,i)=>{
     const method=isAdvancedSet(set)?techniqueLabel(set):'Standard';
-    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes,method,'Main',supersetLabel(x,s.exercises)]);
+    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes,method,'Main',supersetLabel(x,s.exercises),...timingColumns(s)]);
     if(isAdvancedSet(set))for(const [j,stage] of (set.stages||[]).entries()){
      const level=setTechnique(set)==='myo'?'Mini '+(j+1):'Stage '+(j+2);
-     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',stage.rpe||'',s.intensity,s.fatigue,x.notes,method,level,supersetLabel(x,s.exercises)]);
+     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',stage.rpe||'',s.intensity,s.fatigue,x.notes,method,level,supersetLabel(x,s.exercises),...timingColumns(s)]);
     }
    });
-   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','',supersetLabel(x,s.exercises)]);
+   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','',supersetLabel(x,s.exercises),...timingColumns(s)]);
   }
-  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes,'','','']);
+  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes,'','','',...timingColumns(s)]);
  }
  download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
@@ -914,9 +942,10 @@ async function action(name,el) {
    state.session.exercises.push(...newEntries);
   }else{
    const now=new Date().toISOString();
-   state.session={id:newId(),name:template.name,date:today(),status:'active',createdAt:now,intensity:'',fatigue:'',notes:'',
+   state.session={id:newId(),name:template.name,date:today(),status:'active',createdAt:now,startTime:now,intensity:'',fatigue:'',notes:'',
     exercises:newEntries,activities:[]};
   }
+  ensureWorkoutStart(state.session);
   state.expanded=new Set(state.session.exercises.slice(-1).map(x=>x.id));
   state.moreOpen.clear();state.previousOpenId=null;state.tab='home';state.justFinishedSessionId='';
   await saveSession();await render();toast('Template loaded');return;
@@ -937,11 +966,13 @@ async function action(name,el) {
   await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
   state.expanded=new Set(active?.exercises?.map(x=>x.id)||[]);
-  state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
+  state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),startTime:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
+   ensureWorkoutStart(state.session);
+   state.workoutTimeOpen=false;
   await saveSession();return render();
  }
- if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
- if(name==='close-workout'){await flushSave();state.session=null;state.moreOpen.clear();state.expanded.clear();state.tab='home';return render();}
+ if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);if(!state.session)return;const initialized=ensureWorkoutStart(state.session);if(initialized)await saveSession();state.workoutTimeOpen=false;state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
+ if(name==='close-workout'){await flushSave();state.session=null;state.workoutTimeOpen=false;state.moreOpen.clear();state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
  if(name==='progress-section'){
   if(['exercises','muscles','photos'].includes(el.dataset.section)){
@@ -1052,7 +1083,7 @@ async function action(name,el) {
  }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
- if(name==='finish'){const wasActive=s.status==='active';s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='finish'){if(!s)return;const wasActive=s.status==='active';if(wasActive&&!finishWorkoutTiming(s)){toast('Start time is later than the current time. Adjust it before finishing.');return;}s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.workoutTimeOpen=false;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-advanced-set'){
   const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
   const type=el.dataset.type;
@@ -1300,6 +1331,7 @@ document.addEventListener('toggle',ev=>{
   else state.templateAdvancedOpen.delete(index);
   return;
  }
+ if(card.matches?.('[data-workout-time-editor]')){state.workoutTimeOpen=card.open;return;}
  if(card.matches?.('[data-advanced-set]')){
   if(card.open)state.advancedOpen.add(card.dataset.advancedSet);
   else state.advancedOpen.delete(card.dataset.advancedSet);
@@ -1315,6 +1347,18 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(ev.target.dataset?.workoutTimeField){
+  const session=state.session,field=ev.target.dataset.workoutTimeField;
+  if(!session)return;
+  const iso=isoFromLocalDateTime(ev.target.value);
+  if(!iso||!changeWorkoutTime(session,field,iso)){
+   toast('Enter a valid time. Start must be before end, and active starts cannot be in the future.');
+   ev.target.value=localDateTimeValue(session[field]);
+   return;
+  }
+  try{await saveSession();await render();}catch(err){console.error(err);toast('Could not save workout time');}
+  return;
+ }
  if(state.templateDraft&&ev.target.dataset?.templateTechnique!==undefined){
   const index=Number(ev.target.dataset.templateTechnique),setIndex=Number(ev.target.dataset.setIndex);
   const entry=state.templateDraft.exercises[index],type=ev.target.value;
@@ -1506,6 +1550,7 @@ document.addEventListener('submit',async ev=>{
 $('#settings-button').addEventListener('click',async()=>{if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
 (async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}try{await removeLegacySecondaryMuscles();}catch(error){console.warn('Exercise tag cleanup could not finish',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
-document.addEventListener('visibilitychange',refreshRestTimers);
-window.addEventListener('pageshow',refreshRestTimers);
-window.addEventListener('focus',refreshRestTimers);
+setInterval(refreshWorkoutDuration,1000);
+document.addEventListener('visibilitychange',()=>{refreshRestTimers();refreshWorkoutDuration();});
+window.addEventListener('pageshow',()=>{refreshRestTimers();refreshWorkoutDuration();});
+window.addEventListener('focus',()=>{refreshRestTimers();refreshWorkoutDuration();});
