@@ -941,9 +941,10 @@ async function action(name,el) {
    state.session.exercises.push(...newEntries);
   }else{
    const now=new Date().toISOString();
-   state.session={id:newId(),name:template.name,date:today(),status:'active',createdAt:now,intensity:'',fatigue:'',notes:'',
+   state.session={id:newId(),name:template.name,date:today(),status:'active',createdAt:now,startTime:now,intensity:'',fatigue:'',notes:'',
     exercises:newEntries,activities:[]};
   }
+  ensureWorkoutStart(state.session);
   state.expanded=new Set(state.session.exercises.slice(-1).map(x=>x.id));
   state.moreOpen.clear();state.previousOpenId=null;state.tab='home';state.justFinishedSessionId='';
   await saveSession();await render();toast('Template loaded');return;
@@ -964,11 +965,13 @@ async function action(name,el) {
   await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
   state.expanded=new Set(active?.exercises?.map(x=>x.id)||[]);
-  state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
+  state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),startTime:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
+   ensureWorkoutStart(state.session);
+   state.workoutTimeOpen=false;
   await saveSession();return render();
  }
- if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
- if(name==='close-workout'){await flushSave();state.session=null;state.moreOpen.clear();state.expanded.clear();state.tab='home';return render();}
+ if(name==='open') {await flushSave();state.session=await get('sessions',el.dataset.id);if(!state.session)return;const initialized=ensureWorkoutStart(state.session);if(initialized)await saveSession();state.workoutTimeOpen=false;state.expanded=new Set(state.session.exercises?.map(x=>x.id)||[]);return render();}
+ if(name==='close-workout'){await flushSave();state.session=null;state.workoutTimeOpen=false;state.moreOpen.clear();state.expanded.clear();state.tab='home';return render();}
  if(name==='history'){state.tab='history';return render();}
  if(name==='progress-section'){
   if(['exercises','muscles','photos'].includes(el.dataset.section)){
@@ -1079,7 +1082,7 @@ async function action(name,el) {
  }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
- if(name==='finish'){const wasActive=s.status==='active';s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='finish'){if(!s)return;const wasActive=s.status==='active';if(wasActive&&!finishWorkoutTiming(s)){toast('Start time is later than the current time. Adjust it before finishing.');return;}s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.workoutTimeOpen=false;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-advanced-set'){
   const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
   const type=el.dataset.type;
@@ -1327,6 +1330,7 @@ document.addEventListener('toggle',ev=>{
   else state.templateAdvancedOpen.delete(index);
   return;
  }
+ if(card.matches?.('[data-workout-time-editor]')){state.workoutTimeOpen=card.open;return;}
  if(card.matches?.('[data-advanced-set]')){
   if(card.open)state.advancedOpen.add(card.dataset.advancedSet);
   else state.advancedOpen.delete(card.dataset.advancedSet);
@@ -1342,6 +1346,18 @@ document.addEventListener('toggle',ev=>{
  else state.expanded.delete(card.dataset.exerciseCard);
 },true);
 document.addEventListener('change',async ev=>{
+ if(ev.target.dataset?.workoutTimeField){
+  const session=state.session,field=ev.target.dataset.workoutTimeField;
+  if(!session)return;
+  const iso=isoFromLocalDateTime(ev.target.value);
+  if(!iso||!changeWorkoutTime(session,field,iso)){
+   toast('Enter a valid time. Start must be before end, and active starts cannot be in the future.');
+   ev.target.value=localDateTimeValue(session[field]);
+   return;
+  }
+  try{await saveSession();await render();}catch(err){console.error(err);toast('Could not save workout time');}
+  return;
+ }
  if(state.templateDraft&&ev.target.dataset?.templateTechnique!==undefined){
   const index=Number(ev.target.dataset.templateTechnique),setIndex=Number(ev.target.dataset.setIndex);
   const entry=state.templateDraft.exercises[index],type=ev.target.value;
@@ -1533,6 +1549,7 @@ document.addEventListener('submit',async ev=>{
 $('#settings-button').addEventListener('click',async()=>{if(state.tab==='template-editor'&&state.templateDirty&&!confirm('Discard unsaved template changes?'))return;state.templateDraft=null;state.templateDirty=false;state.justFinishedSessionId='';await flushSave();state.session=null;state.report=false;state.tab='settings';state.libraryDetail=null;await render();});
 (async()=>{try{try{await installStarterExercises();}catch(error){console.warn('Starter exercise catalog could not be installed',error);}try{await removeLegacySecondaryMuscles();}catch(error){console.warn('Exercise tag cleanup could not finish',error);}await linkExistingExercises();await render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);}catch(err){console.error(err);main.innerHTML='<div class="card">Unable to open local workout storage. Check Safari storage permissions, then reload.</div>';}})();
 setInterval(refreshRestTimers,500);
-document.addEventListener('visibilitychange',refreshRestTimers);
-window.addEventListener('pageshow',refreshRestTimers);
-window.addEventListener('focus',refreshRestTimers);
+setInterval(refreshWorkoutDuration,1000);
+document.addEventListener('visibilitychange',()=>{refreshRestTimers();refreshWorkoutDuration();});
+window.addEventListener('pageshow',()=>{refreshRestTimers();refreshWorkoutDuration();});
+window.addEventListener('focus',()=>{refreshRestTimers();refreshWorkoutDuration();});
