@@ -775,21 +775,22 @@ function renderReport() {
 function download(name, body, mime) {const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function csvValue(x) {return '"'+String(x??'').replace(/"/g,'""')+'"';}
 function exportCsv() {
- const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes','set_method','stage','superset']];
+ const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes','set_method','stage','superset','start_time','end_time','duration_seconds']];
+ const timingColumns=session=>[session.startTime||'',session.endTime||'',workoutElapsedMs(session)===null?'':Math.floor(workoutElapsedMs(session)/1000)];
  for(const s of selected()) {
   for(const x of s.exercises||[]) {
    const sets=recordedSets(x);
    if(sets.length)sets.forEach((set,i)=>{
     const method=isAdvancedSet(set)?techniqueLabel(set):'Standard';
-    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes,method,'Main',supersetLabel(x,s.exercises)]);
+    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes,method,'Main',supersetLabel(x,s.exercises),...timingColumns(s)]);
     if(isAdvancedSet(set))for(const [j,stage] of (set.stages||[]).entries()){
      const level=setTechnique(set)==='myo'?'Mini '+(j+1):'Stage '+(j+2);
-     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',stage.rpe||'',s.intensity,s.fatigue,x.notes,method,level,supersetLabel(x,s.exercises)]);
+     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',stage.rpe||'',s.intensity,s.fatigue,x.notes,method,level,supersetLabel(x,s.exercises),...timingColumns(s)]);
     }
    });
-   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','',supersetLabel(x,s.exercises)]);
+   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','',supersetLabel(x,s.exercises),...timingColumns(s)]);
   }
-  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes,'','','']);
+  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes,'','','',...timingColumns(s)]);
  }
  download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
