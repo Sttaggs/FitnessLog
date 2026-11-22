@@ -1,9 +1,10 @@
 import {trendSvg,numericValue} from './analytics.js';
 import {muscleSetSummary} from './muscle-utils.js';
 import {isAdvancedSet,techniqueLabel} from './advanced-utils.js';
+import {recordedRir,targetRirFloor} from './effort-utils.js';
 import {strengthSessions,strengthChartPoints,progressionTrend,availableWeights,comparisonPoints,latestWorkingPerformance,comparableEffort,normalizedTarget,nextSessionAdvice} from './progression.js';
 
-const hasData=set => Boolean(set && ['weight','reps','rpe'].some(key=>set[key]!==''&&set[key]!==undefined&&set[key]!==null));
+const hasData=set => Boolean(set && ['weight','reps','rir','rpe'].some(key=>set[key]!==''&&set[key]!==undefined&&set[key]!==null));
 const formatNumber=value => value===null||value===undefined?'—':String(value);
 const viewNames=['Front','Side','Back'];
 const dateString=(date)=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
@@ -56,7 +57,7 @@ function renderExerciseProgress({state,e,displayDate}){
  const trend=progressionTrend(history);
  const latestRecord=history.at(-1)||null;
  const latestSet=latestWorkingPerformance(latestRecord);
- const rpeComparison=comparableEffort(history);
+ const rirComparison=comparableEffort(history);
  const advice=nextSessionAdvice(latestRecord,chosen);
  const currentEstimate=trend.latest;
  const series=strengthChartPoints(history,state.progressRange,new Date());
@@ -66,12 +67,12 @@ function renderExerciseProgress({state,e,displayDate}){
  const controls='<label class="field progress-range">Period<select data-progress-control="range" aria-label="Chart time range">'+
    rangeOptions.map(([value,label])=>'<option value="'+value+'" '+(value===state.progressRange?'selected':'')+'>'+label+'</option>').join('')+'</select></label>';
  const latestLabel=latestSet?numberLabel(latestSet.weight,2)+' lb × '+latestSet.reps+' reps':'No complete weight-and-rep set';
- const rpeLabel=latestSet?.rpe!==null&&latestSet?.rpe!==undefined?' · RPE '+latestSet.rpe:'';
+ const rirLabel=latestSet?.rir!==null&&latestSet?.rir!==undefined?' · RIR '+latestSet.rir:'';
  const statusNote=trend.change!==null?('Last 3 vs previous 3 measured sessions: '+signed(trend.change)+'.'):
   trend.count>1?'Latest estimated max vs previous: '+signed(trend.sessionChange)+'.':'Complete another eligible session to compare estimates.';
  const strengthNote=allMeasurements.length>0?'Based on the strongest eligible set (1–10 reps) from each completed session. The equation estimates strength; it does not measure a tested 1RM.':'An estimate needs recorded weight and 1–10 repetitions in the same set.';
  const preview=latestRecord?'<div class="progress-kpi"><span>Best set · latest workout</span><strong>'+e(latestLabel)+'</strong>'+
-   (rpeLabel?'<small>'+e(rpeLabel.replace(/^ · /,''))+'</small>':'')+'</div>':
+   (rirLabel?'<small>'+e(rirLabel.replace(/^ · /,''))+'</small>':'')+'</div>':
    '<div class="progress-kpi"><span>Best set · latest workout</span><strong>—</strong></div>';
  const strength='<div class="progress-kpi"><span>Estimated 1RM</span><strong>'+
   (currentEstimate?numberLabel(currentEstimate.value)+' lb':'—')+'</strong>'+
@@ -86,7 +87,7 @@ function renderExerciseProgress({state,e,displayDate}){
   '<details class="progress-target-editor" data-progress-target-editor '+(state.progressTargetOpen?'open':'')+'>'+
    '<summary>'+e(hasTarget?'Edit exercise targets':'Set an exercise target')+'</summary>'+
    '<div class="progress-target-editor-body">'+targetFields(chosen,e)+
-    '<p class="helper">Targets guide optional suggestions and never change your recorded sets. Set an RPE ceiling only if you want effort checked before increasing load.</p></div></details>'+
+    '<p class="helper">Targets guide optional suggestions and never change your recorded sets. Set a minimum RIR only if you want to avoid increasing weight after sets performed too close to failure.</p></div></details>'+
   '</section>';
  const chart='<section class="card progress-chart-card">'+
   '<div class="progress-chart-heading"><h2>Estimated strength</h2>'+controls+'</div>'+
@@ -94,19 +95,19 @@ function renderExerciseProgress({state,e,displayDate}){
    '<div class="empty">No eligible estimates in this period.</div>')+'</div>'+
   '<p class="helper">'+e(strengthNote)+'</p>'+
   '<details class="progress-method"><summary>How the trend is calculated</summary>'+
-   '<p class="helper">Estimated 1RM uses the Epley equation with recorded weight and 1–10 reps. Warm-ups are excluded when marked. The status compares the median estimates of the latest three measured sessions with the prior three; a change greater than 3% is highlighted as improvement or possible regression. This is a practical display threshold, not a diagnostic cutoff. RPE is shown separately and does not alter the estimate. Drop sets, Myo-reps and ladders are excluded from estimated-strength calculations; supersets retain independent standard sets. Far-from-failure sets may underestimate capacity.</p></details></section>';
- const effort=rpeComparison?
-  '<p class="helper">At '+e(numberLabel(rpeComparison.weight,2))+' lb × '+e(rpeComparison.reps)+
-  ' reps, recorded RPE changed from '+e(rpeComparison.previous)+' to '+e(rpeComparison.current)+'. RPE provides context; it does not change estimated strength.</p>':'';
+   '<p class="helper">Estimated 1RM uses the Epley equation with recorded weight and 1–10 reps. Warm-ups are excluded when marked. The status compares the median estimates of the latest three measured sessions with the prior three; a change greater than 3% is highlighted as improvement or possible regression. This is a practical display threshold, not a diagnostic cutoff. RIR is shown separately and does not alter the estimate. Historical RPE entries are displayed as approximate RIR (10 minus RPE), while their originals remain saved. Drop sets, Myo-reps and ladders are excluded from estimated-strength calculations; supersets retain independent standard sets. Far-from-failure sets may underestimate capacity.</p></details></section>';
+ const effort=rirComparison?
+  '<p class="helper">At '+e(numberLabel(rirComparison.weight,2))+' lb × '+e(rirComparison.reps)+
+  ' reps, recorded RIR changed from '+e(rirComparison.previous)+' to '+e(rirComparison.current)+'. RIR provides context; it does not change estimated strength.</p>':'';
  const more=renderOtherComparisons({state,e,history})+
   '<details class="progress-history-disclosure"><summary>Recorded sessions ('+history.length+')</summary>'+
   (history.length?'<div class="progress-session-list">'+history.slice().reverse().slice(0,20).map(record=>
    '<details class="progress-session"><summary><span>'+e(displayDate(record.date))+' · '+e(record.sessionName)+'</span>'+
    '<span class="progress-session-count">'+record.sets.filter(hasData).length+' logged sets</span></summary>'+
-   '<div class="progress-session-body"><div class="progress-session-table"><div class="progress-session-head"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>'+
+   '<div class="progress-session-body"><div class="progress-session-table"><div class="progress-session-head"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RIR</span></div>'+
    record.sets.map((set,index)=>'<div class="progress-session-row"><span>'+(index+1)+(set.warmup===true?' W':'')+(isAdvancedSet(set)?' '+techniqueLabel(set):'')+
      '</span><span>'+e(formatNumber(set.weight===''?null:set.weight))+'</span><span>'+
-     e(formatNumber(set.reps===''?null:set.reps))+'</span><span>'+e(formatNumber(set.rpe===''?null:set.rpe))+'</span></div>').join('')+'</div>'+
+     e(formatNumber(set.reps===''?null:set.reps))+'</span><span>'+e(recordedRir(set)===null?'—':recordedRir(set))+'</span></div>').join('')+'</div>'+
    (record.notes?'<p class="helper">Notes: '+e(record.notes)+'</p>':'')+
    '<button class="btn secondary small" data-action="open" data-id="'+e(record.sessionId)+'">Edit workout</button></div></details>'
   ).join('')+'</div><p class="helper">Showing up to 20 recent completed sessions. W = warm-up. Advanced stage details are in the saved workout.</p>':
@@ -119,10 +120,10 @@ function targetFields(ex,e){
  const target=ex.progressTarget||{};
  const control=(field,label,min,max,step='1')=>'<label class="field">'+label+
   '<input type="number" inputmode="decimal" min="'+min+'" max="'+max+'" step="'+step+
-  '" data-progress-target="'+e(ex.id)+'" data-target-field="'+field+'" value="'+e(target[field]??'')+'" placeholder="—"></label>';
+  '" data-progress-target="'+e(ex.id)+'" data-target-field="'+field+'" value="'+e(field==='rirFloor'?(targetRirFloor(target)??''):(target[field]??''))+'" placeholder="—"></label>';
  return '<div class="progress-target-grid">'+control('sets','Working sets',1,12)+
   control('reps','Reps per set',1,30)+control('increment','Increase by (lb)',0.5,50,'any')+
-  control('rpeCeiling','RPE ceiling (optional)',1,10,'0.5')+'</div>';
+  control('rirFloor','Minimum RIR (optional)',0,10,'0.5')+'</div>';
 }
 function renderOtherComparisons({state,e,history}){
  const weights=availableWeights(history);
