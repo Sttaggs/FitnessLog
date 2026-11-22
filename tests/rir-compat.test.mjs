@@ -28,6 +28,8 @@ test('explicit RIR values override retained legacy RPE',()=>{
  assert.equal(recordedRir(record),3);
  assert.equal(legacyEffort(record),false);
  assert.equal(record.rpe,'8');
+ assert.equal(recordedRir({rpe:'8',rir:''}),null);
+ assert.equal(legacyEffort({rpe:'8',rir:''}),false);
 });
 test('legacy RPE ceiling translates to minimum RIR without losing old target',()=>{
  const old={rpeCeiling:9};
