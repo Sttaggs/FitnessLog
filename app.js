@@ -1047,33 +1047,31 @@ async function action(name,el) {
   state.previousOpenId=shouldOpen?el.dataset.id:null;
   return;
  }
- if(name==='rest-start'||name==='rest-stop'){
-  const exercise=s?.exercises?.find(x=>x.id===el.dataset.id);
-  if(!exercise)return;
-  const key=restKey(exercise);
-  if(name==='rest-stop'){
-   const running=readRestTimer();
-   if(running.mode!=='idle'&&running.exerciseId===key)resetRestTimer();
-  }else{
-   const input=document.querySelector('[data-rest-minutes][data-exercise-id="'+exercise.id+'"]');
+ if(['rest-start','rest-stop','rest-pause','rest-resume','rest-plus','rest-minus'].includes(name)){
+  if(!s||s.status!=='active')return;
+  const timer=readRestTimer();
+  if(name==='rest-stop')resetRestTimer();
+  else if(name==='rest-pause')pauseRestTimer();
+  else if(name==='rest-resume')resumeRestTimer();
+  else if(name==='rest-plus'||name==='rest-minus')adjustRestTimer(name==='rest-plus'?30:-30);
+  else{
+   const input=main.querySelector('[data-rest-minutes]');
    const minutes=Number(input?.value);
    if(!input||input.value.trim()===''||!Number.isFinite(minutes)||minutes<0.25||minutes>30){
-    toast('Enter a rest time between 0.25 and 30 minutes');
-    input?.focus();
-    return;
+    toast('Rest must be between 0.25 and 30 minutes');input?.focus();return;
    }
    const seconds=Math.round(minutes*60);
-   setRestPreference(key,seconds);
+   setRestPreference('workout',seconds);
    unlockRestSound();
-   startRestTimer(key,exercise.name,seconds);
-   input.blur();
+   startRestTimer('workout','Workout',seconds);
   }
+  await render();
   refreshRestTimers();
   return;
  }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
- if(name==='finish'){if(!s)return;const wasActive=s.status==='active';if(wasActive&&!finishWorkoutTiming(s)){toast('Start time is later than the current time. Adjust it before finishing.');return;}s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.workoutTimeOpen=false;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='finish'){if(!s)return;const wasActive=s.status==='active';if(wasActive&&!finishWorkoutTiming(s)){toast('Start time is later than the current time. Adjust it before finishing.');return;}s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.workoutTimeOpen=false;state.floatingRestOpen=false;resetRestTimer();state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-advanced-set'){
   const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
   const type=el.dataset.type;
@@ -1321,6 +1319,7 @@ document.addEventListener('toggle',ev=>{
   else state.templateAdvancedOpen.delete(index);
   return;
  }
+ if(card.matches?.('[data-floating-rest]')){state.floatingRestOpen=card.open;return;}
  if(card.matches?.('[data-workout-time-editor]')){state.workoutTimeOpen=card.open;return;}
  if(card.matches?.('[data-advanced-set]')){
   if(card.open)state.advancedOpen.add(card.dataset.advancedSet);
@@ -1442,8 +1441,11 @@ document.addEventListener('change',async ev=>{
  if(ev.target.matches?.('[data-rest-minutes]')){
   const minutes=Number(ev.target.value);
   if(ev.target.value.trim()!==''&&Number.isFinite(minutes)&&minutes>=0.25&&minutes<=30){
-   const exercise=state.session?.exercises?.find(x=>x.id===ev.target.dataset.exerciseId);
-   if(exercise)setRestPreference(restKey(exercise),Math.round(minutes*60));
+   setRestPreference('workout',Math.round(minutes*60));
+   refreshRestTimers();
+  }else{
+   toast('Rest must be between 0.25 and 30 minutes');
+   ev.target.value=restMinutesLabel(restPreference('workout'));
   }
   return;
  }
