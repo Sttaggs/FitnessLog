@@ -24,8 +24,7 @@ export function rirInput(set){
  return n===null?'':String(n);
 }
 export function targetRirFloor(target){
- const direct=validRir(target?.rirFloor);
- if(direct!==null)return direct;
+ if(Object.prototype.hasOwnProperty.call(target||{},'rirFloor'))return validRir(target.rirFloor);
  const old=validLegacyRpe(target?.rpeCeiling);
  return old===null?null:Math.max(0,Math.round((10-old)*10)/10);
 }
