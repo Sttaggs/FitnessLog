@@ -2,6 +2,7 @@ import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {recordedRir,rirInput,targetRirFloor,validRir} from './effort-utils.js';
 import {ensureWorkoutStart,finishWorkoutTiming,workoutElapsedMs,clockDuration,shortDuration,localTimeLabel,localDateTimeValue,isoFromLocalDateTime,changeWorkoutTime} from './workout-timer.js';
 import {ADVANCED_TYPES,isAdvancedSet,setTechnique,techniqueLabel,newAdvancedSet,setTechniqueOnExisting,hasRecordedStages,MAX_STAGES,linkSuperset,removeSuperset,cleanSupersets,normalizeSetPlan,templatePlanForSet} from './advanced-utils.js';
 import {renderAdvancedSetPanel,renderAdvancedTools,renderSupersetSettings,supersetLabel} from './advanced-ui.js';
@@ -20,7 +21,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), workoutTimeOpen:false, advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), floatingRestOpen:false, workoutTimeOpen:false, advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -297,6 +298,7 @@ async function render() {
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab||(b.dataset.tab==='home'&&['templates','template-editor'].includes(state.tab))));
  title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings',templates:'Templates','template-editor':'Edit template'})[state.tab]||'FitnessLog';
  main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings,templates:renderTemplates,'template-editor':renderTemplateEditor}[state.tab]||renderHome)();
+ document.getElementById('app')?.classList.toggle('has-floating-rest',!!state.session&&state.session.status==='active'&&!state.report);
 }
 function renderHome() {
  const recent=state.sessions.slice(0,4);
@@ -350,7 +352,7 @@ function renderWorkout() {
  <div class="delete-workout-area">
   ${button('Delete workout','delete-workout','danger wide')}
   <p class="helper">Deleting removes this workout from your history and progress statistics.</p>
- </div></div>`;
+ </div></div>${renderFloatingRest()}`;
 }
 const historicalField = (set,key,fallback) => {
  const value=set?.[key];
@@ -359,24 +361,25 @@ const historicalField = (set,key,fallback) => {
 function restMinutesLabel(seconds){
  return String(Math.round(seconds/60*100)/100);
 }
-function renderRestTimer(x) {
- const key=restKey(x);
+function renderFloatingRest(){
+ if(state.session?.status!=='active')return '';
  const timer=readRestTimer();
- const active=timer.mode!=='idle'&&timer.exerciseId===key;
- const mode=active?timer.mode:'idle';
- const isRunning=mode==='running';
- const isFinished=mode==='finished';
- const primaryAction=active?'rest-stop':'rest-start';
- return '<div class="rest-tiny" data-exercise-timer="'+e(key)+'" data-mode="'+mode+'" role="group" aria-label="Rest timer for '+e(x.name)+'">'+
-  '<span class="rest-tiny-label">Rest</span>'+
-  '<input class="rest-tiny-minutes" data-rest-minutes data-exercise-id="'+e(x.id)+'" type="number" min="0.25" max="30" step="any" inputmode="decimal" aria-label="Rest duration in minutes" value="'+e(restMinutesLabel(restPreference(key)))+'" '+(active?'hidden':'')+'>'+
-  '<span class="rest-tiny-unit" data-rest-unit '+(active?'hidden':'')+'>min</span>'+
-  '<output class="rest-tiny-countdown" data-rest-clock aria-label="Rest time remaining" '+(!active?'hidden':'')+'>'+restTimeLabel(active?timer.remaining:0)+'</output>'+
-  '<button type="button" class="rest-tiny-action" data-rest-primary data-action="'+primaryAction+'" data-id="'+e(x.id)+'" aria-label="'+(active?'Stop rest timer':'Start rest timer')+'">'+(active?(isFinished?'Reset':'Stop'):'Start')+'</button>'+
-  '</div>';
-}
-function restKey(entry) {
- return entry.exerciseId||normalizeName(entry.name)||entry.id;
+ const active=timer.mode!=='idle';
+ const label=active?'Rest · '+restTimeLabel(timer.remaining):'Rest timer · '+restTimeLabel(restPreference('workout'));
+ return '<div class="floating-rest" data-rest-mode="'+timer.mode+'">'+
+  '<details class="floating-rest-details" data-floating-rest '+(state.floatingRestOpen?'open':'')+'>'+
+   '<summary class="floating-rest-trigger" aria-label="Open rest timer controls"><span data-floating-rest-label>'+e(label)+'</span><span aria-hidden="true">⌃</span></summary>'+
+   '<div class="floating-rest-controls">'+
+    '<label>Rest minutes<input data-rest-minutes type="number" min="0.25" max="30" step="any" inputmode="decimal" value="'+e(restMinutesLabel(restPreference('workout')))+'"></label>'+
+    '<div class="floating-rest-actions">'+
+    (timer.mode==='running'?'<button type="button" class="btn secondary" data-action="rest-pause">Pause</button>':
+     timer.mode==='paused'?'<button type="button" class="btn secondary" data-action="rest-resume">Resume</button>':
+     '<button type="button" class="btn" data-action="rest-start">Start</button>')+
+    (active?'<button type="button" class="btn secondary" data-action="rest-minus">−30s</button>'+
+     '<button type="button" class="btn secondary" data-action="rest-plus">+30s</button>'+
+     '<button type="button" class="btn secondary" data-action="rest-stop">Reset</button>':'')+
+    '</div><p class="helper">One rest timer for the workout. It continues while scrolling or when the app is in the background.</p>'+
+   '</div></details></div>';
 }
 let restAudioContext=null;
 function unlockRestSound(){
@@ -413,30 +416,18 @@ function refreshRestTimers(){
  if(timer.mode==='finished'&&!timer.notified&&!document.hidden){
   const recent=Number.isFinite(timer.endAt)&&Date.now()-timer.endAt<60000;
   markRestAlerted();
-  if(recent){playRestSound();toast('Rest complete · '+timer.exerciseName);}
+  if(recent){playRestSound();toast('Rest complete');}
  }
- for(const panel of main.querySelectorAll('[data-exercise-timer]')){
-  const key=panel.dataset.exerciseTimer;
-  const active=timer.mode!=='idle'&&timer.exerciseId===key;
-  const mode=active?timer.mode:'idle';
-  panel.dataset.mode=mode;
-  const input=panel.querySelector('[data-rest-minutes]');
-  const unit=panel.querySelector('[data-rest-unit]');
-  const countdown=panel.querySelector('[data-rest-clock]');
-  if(input)input.hidden=active;
-  if(unit)unit.hidden=active;
-  if(countdown){
-   countdown.hidden=!active;
-   if(active)countdown.textContent=restTimeLabel(timer.remaining);
-  }
-  const button=panel.querySelector('[data-rest-primary]');
-  if(button){
-   const label=active?mode==='finished'?'Reset':'Stop':'Start';
-   button.dataset.action=active?'rest-stop':'rest-start';
-   button.textContent=label;
-   button.setAttribute('aria-label',label+' rest timer');
-  }
- }
+ const bar=main.querySelector('.floating-rest');
+ if(!bar)return;
+ bar.dataset.restMode=timer.mode;
+ const label=bar.querySelector('[data-floating-rest-label]');
+ if(label)label.textContent=timer.mode==='idle'?
+  'Rest timer · '+restTimeLabel(restPreference('workout')):
+  'Rest · '+restTimeLabel(timer.remaining)+(timer.mode==='paused'?' · paused':timer.mode==='finished'?' · done':'');
+ const button=bar.querySelector('[data-action="rest-start"],[data-action="rest-resume"],[data-action="rest-pause"]');
+ const action=timer.mode==='running'?'rest-pause':timer.mode==='paused'?'rest-resume':'rest-start';
+ if(button){button.dataset.action=action;button.textContent=action==='rest-pause'?'Pause':action==='rest-resume'?'Resume':'Start';}
 }
 function muscleOptions(selected){
  const candidates=muscleChoices(state.exercises);
@@ -494,7 +485,6 @@ function renderExercise(x,i) {
  return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
  <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(supersetLabel(x,state.session?.exercises)?supersetLabel(x,state.session?.exercises)+' · ':'')}${e(type)} · ${x.sets?.length||0} ${x.sets?.length===1?'set':'sets'}</small></div><span class="muted">▾</span></div></summary>
  <div class="detail-body">
- ${renderRestTimer(x)}
  ${prev?`<section class="previous-reference">
  <button type="button" class="previous-toggle" data-action="toggle-previous" data-id="${e(x.id)}" aria-expanded="${state.previousOpenId===x.id}" aria-controls="previous-panel-${e(x.id)}">
   <span class="previous-toggle-label"><span class="previous-icon" aria-hidden="true">↶</span>Previous performance <small>${e(displayDate(prev.date))}</small></span>
