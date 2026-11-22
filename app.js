@@ -927,6 +927,7 @@ async function action(name,el) {
    if(resolved)item.exerciseId=resolved.id;
   }
   const newEntries=templateToEntries(source,state.exercises,newId);
+  if(!active)resetRestTimer();
   if(active){
    state.session=active;
    state.session.exercises.push(...newEntries);
@@ -956,6 +957,7 @@ async function action(name,el) {
   await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
   state.expanded=new Set(active?.exercises?.map(x=>x.id)||[]);
+  if(!active)resetRestTimer();
   state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),startTime:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
    ensureWorkoutStart(state.session);
    state.workoutTimeOpen=false;
