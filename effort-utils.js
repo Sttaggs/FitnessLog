@@ -11,13 +11,12 @@ export function validLegacyRpe(value){
  return Number.isFinite(n)&&n>=1&&n<=10?n:null;
 }
 export function recordedRir(set){
- const rir=validRir(set?.rir);
- if(rir!==null)return rir;
+ if(Object.prototype.hasOwnProperty.call(set||{},'rir'))return validRir(set.rir);
  const original=validLegacyRpe(set?.rpe);
  return original===null?null:Math.round((10-original)*10)/10;
 }
 export function legacyEffort(set){
- return validRir(set?.rir)===null&&validLegacyRpe(set?.rpe)!==null;
+ return !Object.prototype.hasOwnProperty.call(set||{},'rir')&&validLegacyRpe(set?.rpe)!==null;
 }
 export function rirInput(set){
  const n=recordedRir(set);
