@@ -373,4 +373,4 @@
 @media(min-width:620px){.floating-rest{width:min(calc(100% - 40px),720px)}}
 @media print{.floating-rest{display:none!important}}
 /* Keep the fixed control away from the keyboard during set entry. */
-#app.has-floating-rest:has(main input:focus) .floating-rest{display:none}
+#app.has-floating-rest:has(main .detail input:focus) .floating-rest,#app.has-floating-rest:has(main .card input:focus) .floating-rest{display:none}
