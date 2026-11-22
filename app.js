@@ -195,8 +195,8 @@ async function addExerciseToWorkout(master){
  await render();
  document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});
 }
-const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
-const hasSetData = set => Boolean(set && (['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined) || (set.stages||[]).some(stage=>['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined))));
+const blankSet = () => ({id:newId(),weight:'',reps:'',rir:''});
+const hasSetData = set => Boolean(set && (['weight','reps','rir','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined) || (set.stages||[]).some(stage=>['weight','reps','rir','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined))));
 const recordedSets = x => (x.sets||[]).filter(hasSetData);
 async function ensureExercise(name) {
  const clean=String(name||'').trim().replace(/\s+/g,' ');
@@ -445,10 +445,10 @@ function renderProgressionTarget(master,compact=false){
   label('sets','Working sets',target.sets,1,12)+
   label('reps','Reps per set',target.reps,1,30)+
   label('increment','Add weight (lb)',target.increment,0.5,50,'any')+
-  label('rpeCeiling','RPE ceiling (optional)',target.rpeCeiling,1,10,'0.5')+
+  label('rirFloor','Minimum RIR (optional)',targetRirFloor(target)??'',0,10,'0.5')+
  '</div>'+
  (compact?'<p class="helper">Targets only guide suggestions. Logged sets remain unchanged.</p>':
-  '<p class="helper">When all targeted working sets reach the rep goal at the same weight, a load increase may be suggested. RPE is optional.</p>');
+  '<p class="helper">When all targeted working sets reach the rep goal, a load increase may be suggested. RIR (reps in reserve) is optional.</p>');
 }
 function renderExerciseMore(x,scope,type){
  const master=state.exercises.find(ex=>ex.id===x.exerciseId);
@@ -491,16 +491,16 @@ function renderExercise(x,i) {
   <span class="previous-chevron" aria-hidden="true">⌄</span>
  </button>
  <div id="previous-panel-${e(x.id)}" class="previous-panel" ${state.previousOpenId===x.id?'':'hidden'}>
-  ${prev.sets.length?`<div class="previous-sets"><div class="previous-sets-heading"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>
-  ${prev.sets.map((set,j)=>`<div class="previous-sets-row"><span>${j+1}</span><span>${e(historicalField(set,'weight','—'))}</span><span>${e(historicalField(set,'reps','—'))}</span><span>${e(historicalField(set,'rpe','—'))}</span></div>`).join('')}</div>`:'<p class="helper">No sets recorded in the previous session.</p>'}
+  ${prev.sets.length?`<div class="previous-sets"><div class="previous-sets-heading"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RIR</span></div>
+  ${prev.sets.map((set,j)=>`<div class="previous-sets-row"><span>${j+1}</span><span>${e(historicalField(set,'weight','—'))}</span><span>${e(historicalField(set,'reps','—'))}</span><span>${e(rirInput(set)||'—')}</span></div>`).join('')}</div>`:'<p class="helper">No sets recorded in the previous session.</p>'}
   ${prev.notes?`<p class="helper previous-notes">Notes: ${e(prev.notes)}</p>`:''}
  </div></section>`:''}
- <div class="set-grid set-heading"><span>SET</span><span>WEIGHT (LB)</span><span>REPS</span><span>RPE</span><span></span></div>
+ <div class="set-grid set-heading"><span>SET</span><span>WEIGHT (LB)</span><span>REPS</span><span>RIR</span><span></span></div>
  ${(x.sets||[]).map((set,j)=>`<div class="set-grid">
  <span class="set-number">${j+1}</span>
  <input aria-label="Set ${j+1} weight in pounds" inputmode="decimal" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="${e(historicalField(prev?.sets?.[j],'weight','lb'))}">
  <input aria-label="Set ${j+1} repetitions" inputmode="numeric" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="${e(historicalField(prev?.sets?.[j],'reps','—'))}">
- <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="${e(historicalField(prev?.sets?.[j],'rpe','1–10'))}">
+ <input aria-label="Set ${j+1} RIR, 0 to 10" inputmode="decimal" type="number" min="0" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rir" value="${e(rirInput(set))}" placeholder="${e(rirInput(prev?.sets?.[j])||'0–10')}">
  <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>${renderAdvancedSetPanel(x,set,e,state.advancedOpen.has(x.id+':'+set.id))}`).join('')}
  ${prev?'<p class="helper historical-hint">Faded values show last time; only typed values are saved.</p>':''}
  <div class="exercise-set-actions"><div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
@@ -673,7 +673,7 @@ function renderLibrary() {
    (records.length?records.map(({session,entry})=>'<div class="item">'+
     '<div class="row between"><div class="grow"><strong>'+e(displayDate(session.date))+'</strong><p class="helper" style="margin:4px 0">'+e(session.name)+'</p>'+
     '<p class="helper" style="margin:4px 0">'+e(recordedSets(entry).map(set=>
-     [set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',set.rpe?'RPE '+set.rpe:''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details')+
+     [set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',recordedRir(set)!==null?'RIR '+recordedRir(set):''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details')+
     '</p></div><button class="btn small secondary" data-action="open" data-id="'+e(session.id)+'">View</button></div></div>').join(''):
     '<div class="card empty">No history for this exercise yet.</div>');
  }
@@ -724,7 +724,7 @@ function renderSettings() {
  <input id="restore-file" type="file" accept="application/json,.json" hidden>
  </div>
  <p class="helper">Photo-inclusive backup is optional and may be large. Photo files are included only when you explicitly choose the photo-inclusive option. Restoring a workout-only backup preserves existing photos on this device.</p></div>
- <div class="card"><h2>About</h2><p class="muted">Exercise analytics track standard weight, repetitions, and RPE; advanced stages are recorded separately and saved in backups. Progress photos remain private. Body measurements remain planned.</p></div>`;
+ <div class="card"><h2>About</h2><p class="muted">Exercise analytics track standard weight, repetitions, and RIR; advanced stages are recorded separately and saved in backups. Progress photos remain private. Body measurements remain planned.</p></div>`;
 }
 function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
@@ -734,7 +734,7 @@ function renderReport() {
  const setValues=set=>[
   set.weight!==''&&set.weight!=null?set.weight+' lb':'',
   set.reps!==''&&set.reps!=null?set.reps+' reps':'',
-  set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:''
+  recordedRir(set)!==null?'RIR '+recordedRir(set):''
  ].filter(Boolean).join(' · ');
  const setDescription=set=>{
   const base=setValues(set);
@@ -753,7 +753,7 @@ function renderReport() {
  <p>Workout time: ${e(localTimeLabel(s.startTime))}–${e(localTimeLabel(s.endTime))} · Duration: ${e(shortDuration(workoutElapsedMs(s))||'Not recorded')}</p>
  <p>Overall intensity: ${e(s.intensity||'Not recorded')} · Overall fatigue: ${e(s.fatigue||'Not recorded')}</p>
  <p>${e(s.notes||'')}</p>
- <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RPE)</th></tr></thead><tbody>
+ <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RIR)</th></tr></thead><tbody>
  ${(s.exercises||[]).map(x=>`<tr><td>${e(x.name)}${x.notes?' — '+e(x.notes):''}</td>
  <td>${e(x.technique||'Standard')}${supersetLabel(x,s.exercises)?' · '+e(supersetLabel(x,s.exercises)):''}</td>
  <td>${recordedSets(x).map(set=>e(setDescription(set))).join('; ')||'No set data recorded'}</td>
@@ -972,7 +972,7 @@ async function action(name,el) {
   return;
  }
  if(name==='progress-metric'){
-  if(['weight','reps','rpe'].includes(el.dataset.metric)){
+  if(['weight','reps','rir'].includes(el.dataset.metric)){
    state.progressMetric=el.dataset.metric;
    await render();
   }
@@ -1109,7 +1109,7 @@ async function action(name,el) {
   }else{
    const stage=chosen.stages.find(stage=>stage.id===el.dataset.stage);
    if(!stage)return;
-   if(['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined)&&
+   if(['weight','reps','rir','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined)&&
       !confirm('Remove this recorded stage?'))return;
    chosen.stages=chosen.stages.filter(stage=>stage.id!==el.dataset.stage);
   }
@@ -1138,7 +1138,7 @@ async function action(name,el) {
  if(name==='add-set'){
   const x=s.exercises.find(x=>x.id===el.dataset.id);
   // The new set starts with no recorded measurements. Its weight, reps and
-  // RPE placeholders are derived solely from the same index of the previous
+  // RIR placeholders are derived solely from the same index of the previous
   // completed workout, when available, by renderExercise().
   x.sets.push(blankSet());
   state.expanded.add(x.id);
@@ -1194,8 +1194,8 @@ function validateEntry(input,value,showError=false) {
   if(showError)toast('Rating must be between 1 and 10');
   return false;
  }
- if(field==='rpe'&&value!==''&&(Number(value)<1||Number(value)>10)) {
-  if(showError)toast('RPE must be between 1 and 10');
+ if(field==='rir'&&value!==''&&validRir(value)===null) {
+  if(showError)toast('RIR must be between 0 and 10 in half-rep steps');
   return false;
  }
  return true;
@@ -1399,7 +1399,7 @@ document.addEventListener('change',async ev=>{
   const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.progressTarget);
   if(!ex)return;
   const field=ev.target.dataset.targetField,limits={
-   sets:[1,12,true],reps:[1,30,true],increment:[0.5,50,false],rpeCeiling:[1,10,false]
+   sets:[1,12,true],reps:[1,30,true],increment:[0.5,50,false],rirFloor:[0,10,false]
   };
   const constraint=limits[field];
   if(!constraint)return;
@@ -1408,9 +1408,9 @@ document.addEventListener('change',async ev=>{
    const numeric=Number(raw);
    if(!Number.isFinite(numeric)||numeric<constraint[0]||numeric>constraint[1]||
       (constraint[2]&&!Number.isInteger(numeric))||
-      (field==='rpeCeiling'&&numeric*2!==Math.round(numeric*2))){
+      (field==='rirFloor'&&numeric*2!==Math.round(numeric*2))){
     toast('Enter a valid target or leave the field blank');
-    ev.target.value=ex.progressTarget?.[field]??'';
+    ev.target.value=field==='rirFloor'?(targetRirFloor(ex.progressTarget)??''):(ex.progressTarget?.[field]??'');
     return;
    }
   }
