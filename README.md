@@ -3,7 +3,7 @@
 A private-by-default, local-first fitness journal for iPhone and desktop browsers.
 
 ## Purpose
-FitnessLog supports flexible workout logging without forcing a prescribed workout mode. Exercises can be recorded by name alone, with optional sets, repetitions, weights, per-set RPE, and notes. Intensity and fatigue are recorded at the workout level. Cardio and sauna entries can be attached to a session. Workouts can be edited later.
+FitnessLog supports flexible workout logging without forcing a prescribed workout mode. Exercises can be recorded by name alone, with optional sets, repetitions, weights, per-set RIR, and notes. Intensity and fatigue are recorded at the workout level. Cardio and sauna entries can be attached to a session. Workouts can be edited later.
 
 ## Stack
 - HTML, CSS, and vanilla JavaScript (no build step)
@@ -44,7 +44,7 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - Create reusable workout templates without logging a workout; add, remove, reorder exercises and choose a set count for each
 - Save any active or completed workout as a template, directly from its editor or immediately after finishing
 - Start a workout using any saved template, or add the exercises from a template into an unfinished workout
-- Applying a template creates new blank weight, repetition and RPE fields; exercise identity, order, set counts and optional advanced-set/superset structure are reused. Templates never count toward completed sessions or progression statistics
+- Applying a template creates new blank weight, repetition and RIR fields; exercise identity, order, set counts and optional advanced-set/superset structure are reused. Templates never count toward completed sessions or progression statistics
 - Add exercises in one step; new names are automatically saved and linked to their previous and future workout records
 - On first launch after this update, a built-in starter catalog adds the owner's 106 supplied exercise entries as 105 distinct saved exercises. Close-grip bench press appeared under both Chest and Triceps and is stored only once, with Chest as its single assigned muscle group.
 - Starter catalog groups: Chest, Shoulders, Back, Biceps, Triceps, Quadriceps, Hamstrings and Glutes, Core and Mobility, and Cardio and Conditioning. Built-in categories are editable descriptions, not a rigid training program. Cardio and mobility activities are not assigned muscle-set volume unless given a primary muscle.
@@ -54,19 +54,19 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 
 - Automatically open the first optional set after adding an exercise
 - When adding a new exercise, collapse earlier exercise cards so only the newest entry remains expanded
-- Each new set starts with empty stored fields. If the corresponding set in the last completed exercise session has recorded weight, reps, or RPE, those values appear only as faded placeholders; they are never counted as new performance.
+- Each new set starts with empty stored fields. If the corresponding set in the last completed exercise session has recorded weight, reps, or RIR, those values appear only as faded placeholders; they are never counted as new performance.
 - A compact Previous performance row with a visible chevron stays closed until tapped, then reveals the previous completed workout's sets and notes; tap again to hide them
 - Live exercise lookup searches saved exercise names by partial matches (including middle words), capitalization-insensitive matching, and likely spelling corrections
 - Selecting an existing suggestion uses its permanent exercise ID; similar names require confirmation before a separate record is created
-- Minimal one-row rest timer above the exercise sets: enter a duration in minutes (for example, 3 or 1.5), tap Start, and see the countdown with a Stop/Reset control. The timer does not record rest periods and can beep only while the web app is active.
+- One shared green **Rest timer** stays fixed above the bottom navigation during an active workout. Tap it to expand the duration field and Start/Pause/Resume/±30 seconds/Reset controls. The timer does not record rest periods, and its alert can sound while the app is active.
 - Rest countdowns and per-exercise preferences use localStorage, not workout records; timer values are not recorded in history or exports
 - The timer uses the actual end timestamp, so it resumes showing the correct time after switching apps or locking the device. Web audio and notifications are not guaranteed while the page is suspended or closed.
-- Each expanded exercise card prioritizes the rest timer, previous-performance toggle, set inputs and Add Set; an optional More disclosure contains the exercise name, technique, exercise notes, muscle group and Remove Exercise action
+- Each expanded exercise card prioritizes the previous-performance toggle, set inputs and Add Set; an optional More disclosure contains the exercise name, technique, exercise notes, muscle group and Remove Exercise action
 - Every saved exercise has at most one assigned muscle group, editable under More. The group is stored against the permanent exercise ID and determines its weekly set attribution. Secondary muscle tags have been retired
 - Progress now has Exercises, Muscles, and Photos sections. Exercises starts with a clear strength-trend status and a short optional next-session suggestion; detailed comparisons and recorded sessions are collapsed by default. Muscles shows weekly working-set counts by primary muscle, excluding sets explicitly marked as warm-ups. No weight-times-repetitions volume load is calculated
-- Optional exercise progression targets (working sets, reps, weight increment and RPE ceiling) can be edited in More or Progress. Targets are suggestions, never auto-entered workout results
+- Optional exercise progression targets (working sets, reps, weight increment and minimum RIR target) can be edited in More or Progress. Targets are suggestions, never auto-entered workout results
 - Warm-up sets can be marked in More, without adding controls to the main set-logging table. Marked warm-ups are excluded from strength trends, target assessments and weekly muscle counts; older unmarked sets retain their original meaning
-- Record optional weight, repetitions, and per-set RPE (1–10); workout intensity and fatigue apply only to the overall session
+- Record optional weight, repetitions, and per-set RIR (1–10); workout intensity and fatigue apply only to the overall session
 - Create sets independently per exercise; quick exercise-only logging is valid
 - Conventional sets remain the default; optional drop sets, ladders, Myo-reps and linked supersets are implemented behind collapsed controls
 - Cardio and sauna activity entries
@@ -76,17 +76,23 @@ Data is saved **only in the browser on the current device**, not in GitHub or Cl
 - PWA install support and offline shell cache
 
 
+## Shared floating rest timer and RIR effort logging
+
+During an active workout, a single compact green Rest timer is fixed above the bottom navigation and remains visible as the user scrolls. The disclosure expands to a rest-duration entry and controls for Start, Pause/Resume, +30 seconds, −30 seconds, and Reset. Previous per-exercise rest timers are no longer rendered. The shared rest timer is separate from the total workout-duration clock, keeps counting across app navigation/reloads using its timestamp, and does not create rest records. During set entry the floating control can hide to avoid obstructing the on-screen keyboard.
+
+Per-set effort is now recorded as **RIR (repetitions in reserve)** from 0 to 10 in 0.5 increments; RIR 0 means no additional repetitions are estimated to remain. Existing recorded RPE values are **preserved under their original RPE field** and displayed as approximate RIR using 10 − RPE when no new RIR value exists. This is an approximation, not a retrospective measurement. New RIR entries take precedence without deleting historical RPE. Optional progression effort targets now specify a minimum RIR; old RPE ceilings are interpreted as an equivalent approximate minimum RIR unless replaced or cleared. Weekly set counts and estimated 1RM continue to use weight and repetitions, not effort. CSV includes RIR and an explicit legacy RPE column, while JSON backup retains both original and current fields.
+
 ## Advanced sets and supersets
 
-Standard workout logging is unchanged: each exercise still shows its rest timer, weight/reps/RPE set grid and Add Set. A collapsed **Advanced sets** disclosure underneath that grid provides optional **Drop set**, **Myo-reps**, and **Ladder** actions, plus controls to convert an existing set to another type or back to Standard.
+Standard workout logging retains the weight/reps/RIR set grid and Add Set; the single rest timer is accessible at the bottom of the screen. A collapsed **Advanced sets** disclosure underneath that grid provides optional **Drop set**, **Myo-reps**, and **Ladder** actions, plus controls to convert an existing set to another type or back to Standard.
 
-Each advanced set is a single parent set with the main weight, repetitions and RPE in the normal row. Opening its compact labeled disclosure exposes extra stages: drop sets and ladders record weight, reps and RPE for each additional stage; Myo-reps record mini-set repetitions after the activation set, with the main set's weight understood to apply. You can add and remove extra stages or delete the full advanced set as usual. The app does not assume a preset progression, automatically change weight or require additional logging fields. Changing a type with recorded stages asks for confirmation before discarding those stages.
+Each advanced set is a single parent set with the main weight, repetitions and RIR in the normal row. Opening its compact labeled disclosure exposes extra stages: drop sets and ladders record weight, reps and RIR for each additional stage; Myo-reps record mini-set repetitions after the activation set, with the main set's weight understood to apply. You can add and remove extra stages or delete the full advanced set as usual. The app does not assume a preset progression, automatically change weight or require additional logging fields. Changing a type with recorded stages asks for confirmation before discarding those stages.
 
 A separate collapsed **Superset (optional)** section in each exercise's **More** menu links any two exercises in the current workout. Both exercise cards remain independently editable and display an A1/A2-style group label. Unlinking one exercise unlinks its partner. The rest timer remains manual and unchanged.
 
 For consistent analytics, advanced sequences (including their additional drop, ladder or Myo-rep stages) count as *one working set at most* in weekly primary-muscle set totals, provided repetitions were logged and the sequence is not marked as warm-up. Advanced sequences do **not** contribute to estimated 1RM, fixed-weight comparisons, or automatic next-session load recommendations, because these methods are not directly equivalent to standalone conventional working sets. Conventional sets inside a superset remain eligible for analysis independently.
 
-Templates remember the technique and number of stages for each set, together with superset links. Advanced options in the standalone template editor remain collapsed by default. Starting a workout from a template generates new set and stage IDs with **blank weight, repetitions and RPE**, while superset pairing is remapped to unique IDs for the new workout.
+Templates remember the technique and number of stages for each set, together with superset links. Advanced options in the standalone template editor remain collapsed by default. Starting a workout from a template generates new set and stage IDs with **blank weight, repetitions and RIR**, while superset pairing is remapped to unique IDs for the new workout.
 
 All advanced stage measurements persist in local workout records and full JSON backups; CSV exports now add set-method, stage and superset columns, and printed reports include the stage details. Legacy standard sets and templates remain supported. No advanced technique is ever inserted into a workout unless you explicitly choose it.
 
@@ -98,7 +104,7 @@ Selecting **Finish workout** stores the actual end time and freezes the elapsed 
 
 **Adjust start time** (active workout) or **Adjust start / end times** (completed workout) is an optional disclosure for correcting missed timing. Fields use the device's local date and time but store absolute ISO 8601 timestamps. End must be at or after start; active starts cannot be in the future. Correcting time never changes exercise, set, template or photo records. Previously completed workouts that lack times remain explicitly unmeasured until corrected; the app does not invent historical timings. Older unfinished workouts without timing begin recording from the first time they are opened in this updated version.
 
-Workout duration measures total elapsed wall-clock time, including rest periods and time spent away from the app. It is not an active lifting-time or time-under-tension measurement. Existing exercise rest timers continue operating independently.
+Workout duration measures total elapsed wall-clock time, including rest periods and time spent away from the app. It is not an active lifting-time or time-under-tension measurement. The shared rest timer is separate from the elapsed workout-duration clock.
 
 ## Workout templates
 
@@ -120,15 +126,15 @@ The catalog is a starting point, not a restriction: you can continue creating cu
 
 Progress is divided into **Exercises**, **Muscles** and **Photos** to avoid stacking unrelated reports. Exercise Analytics is the default and sorts recently used exercises first. The Exercise selector is a searchable combobox using the same partial-word, case-insensitive and close-spelling matching as Add Exercise. Typing filters existing saved exercises; tapping a match opens its analytics without creating any new exercise. The text box begins empty, with the currently viewed exercise shown separately. Dismissing an unfinished search clears the text without changing the displayed analytics. Keyboard arrow keys, Enter and Escape are supported.
 
-**Progression analysis:** Epley estimated 1RM uses weight and 1–10 repetitions from individual recorded, non-warm-up sets, with a single repetition treated as the actual lifted load. RPE is *not* included in the formula. The app chooses the highest eligible estimate per completed session; incomplete sets are omitted individually. Estimates are approximations, especially for sets performed far from failure, and should not be treated as verified maximal strength.
+**Progression analysis:** Epley estimated 1RM uses weight and 1–10 repetitions from individual recorded, non-warm-up sets, with a single repetition treated as the actual lifted load. RIR is *not* included in the formula. The app chooses the highest eligible estimate per completed session; incomplete sets are omitted individually. Estimates are approximations, especially for sets performed far from failure, and should not be treated as verified maximal strength.
 
 The progression label compares the **median of the latest three eligible sessions** against the preceding three. Greater than +3% is displayed as **Progressing**, below −3% as **Possible regression**, and values in between as **Holding steady**. Before six eligible sessions the status is **Building baseline**, with a factual latest-versus-previous comparison once available. The ±3% threshold is a pragmatic product heuristic, not a universal physiological significance test. A single low result is not called regression.
 
 **Advanced technique rule:** Drop sets, Myo-reps and ladders are recorded with their own stage data but excluded from strength-estimate and load-progression recommendations. They count at most once toward weekly muscle-set totals. Supersets retain independently measured conventional sets.
 
-**Next-session suggestion:** Each exercise may optionally have working-set, repetition, and weight-increment targets, plus an RPE ceiling. When the most recent completed session has exactly the target number of measured working sets at the same weight and all target repetitions are achieved, the app may suggest a load increase. Missing data, mixed weights, RPE above a configured ceiling, or an observed RPE of 10 prevent an unqualified increase. Shortfalls yield a **Build repetitions** recommendation. Users always decide the actual load; nothing is filled in automatically. Without targets, no prescription is inferred.
+**Next-session suggestion:** Each exercise may optionally have working-set, repetition, and weight-increment targets, plus an minimum RIR target. When the most recent completed session has exactly the target number of measured working sets at the same weight and all target repetitions are achieved, the app may suggest a load increase. Missing data, mixed weights, RIR below a configured minimum, or observed RIR of 0 prevent an unqualified increase. Shortfalls yield a **Build repetitions** recommendation. Users always decide the actual load; nothing is filled in automatically. Without targets, no prescription is inferred.
 
-**Other comparisons**, inside a collapsed disclosure, show the highest repetitions recorded at a fixed weight or the highest load performed for at least a selected number of repetitions. **Recorded sessions** is also collapsed by default and shows the underlying sets. RPE is only compared when both weight and reps match; it is not averaged across dissimilar performances. There is no volume-load metric.
+**Other comparisons**, inside a collapsed disclosure, show the highest repetitions recorded at a fixed weight or the highest load performed for at least a selected number of repetitions. **Recorded sessions** is also collapsed by default and shows the underlying sets. RIR is only compared when both weight and reps match; it is not averaged across dissimilar performances. There is no volume-load metric.
 
 In **Muscles**, only sets with recorded repetitions above zero and one assigned muscle group count toward weekly totals. Each qualifying set is counted once. Marked warm-ups are excluded; older unmarked sets are treated as working sets. Exercise-library tag changes reclassify linked history. The workout overview remains collapsed.
 
