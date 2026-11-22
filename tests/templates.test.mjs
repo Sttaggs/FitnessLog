@@ -34,11 +34,11 @@ test('starting from template creates independent blank workout sets and new IDs'
  assert.equal(first[1].sets.length,2);
  assert.notEqual(first[0].id,second[0].id);
  assert.notEqual(first[0].sets[0].id,second[0].sets[0].id);
- assert.ok(first.every(entry=>entry.sets.every(set=>set.weight===''&&set.reps===''&&set.rpe==='')));
+ assert.ok(first.every(entry=>entry.sets.every(set=>set.weight===''&&set.reps===''&&set.rir==='')));
  assert.equal(first[0].notes,'');
  assert.equal(template.exercises[0].name,'Old name');
 });
-test('sanitization never allows weight reps RPE dates or recorded status in template payload',()=>{
+test('sanitization never allows weight reps RIR dates or recorded status in template payload',()=>{
  const raw={id:'t',name:'  Legs  ',status:'finished',date:'2026-11-13',
   exercises:[{exerciseId:'squat',name:'Squat',sets:3,weight:200,reps:5,rpe:9,warmup:true}]};
  const clean=sanitizedTemplate(raw);

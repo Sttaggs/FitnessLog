@@ -5,8 +5,8 @@ import {muscleSetSummary} from '../muscle-utils.js';
 import {renderProgressView} from '../progress-ui.js';
 
 const record=(date,sets)=>({sessionId:date,date,sessionName:'Workout',createdAt:date,sets,notes:''});
-const set=(weight,reps,rpe='',warmup=false)=>({weight,reps,rpe,warmup});
-const target={progressTarget:{sets:2,reps:5,increment:5,rpeCeiling:9}};
+const set=(weight,reps,rir='',warmup=false)=>({weight,reps,rir,warmup});
+const target={progressTarget:{sets:2,reps:5,increment:5,rirFloor:1}};
 const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
 test('estimated strength uses recorded weight/reps but never unrecorded values or RPE',()=>{
@@ -39,7 +39,7 @@ test('load advice requires full matched working sets and only recorded values',(
  assert.equal(nextSessionAdvice(record('2026-11-01',[set(135,5,8),set('',5)]),target).kind,'missing');
  assert.equal(nextSessionAdvice(record('2026-11-01',[set(135,5,8),set(140,5,8)]),target).kind,'mixed');
  assert.equal(nextSessionAdvice(record('2026-11-01',[set(135,5,8),set(135,4,8)]),target).kind,'build');
- assert.equal(nextSessionAdvice(record('2026-11-01',[set(135,5,10),set(135,5,9)]),target).kind,'hold');
+ assert.equal(nextSessionAdvice(record('2026-11-01',[set(135,5,0),set(135,5,1)]),target).kind,'hold');
  assert.equal(nextSessionAdvice(record('2026-11-01',[set(135,5,''),set(135,5,9)]),target).kind,'uncertain');
  assert.equal(nextSessionAdvice(success,{}).kind,'not-set');
  assert.equal(nextSessionAdvice(null,target).kind,'missing');
@@ -53,8 +53,8 @@ test('explicit warmup marking keeps warmups out of advice, trends and muscle tot
  assert.equal(summary.rows.find(r=>r.muscle==='Chest')?.current,2);
  assert.equal(summary.rows.length,1);
 });
-test('RPE 10 without a ceiling still prevents an unqualified weight increase',()=>{
- const advice=nextSessionAdvice(record('2026-11-01',[set(135,5,10),set(135,5,9)]),
+test('RIR 0 without a threshold still prevents an unqualified weight increase',()=>{
+ const advice=nextSessionAdvice(record('2026-11-01',[set(135,5,0),set(135,5,1)]),
   {progressTarget:{sets:2,reps:5,increment:5}});
  assert.equal(advice.kind,'hold');
 });
@@ -66,7 +66,7 @@ test('fixed-weight reps and weight at rep threshold are not mixed',()=>{
  assert.deepEqual(comparisonPoints(history,'repsAtWeight',135,'all').map(x=>x.value),[8,10]);
  assert.deepEqual(comparisonPoints(history,'weightAtReps',5,'all').map(x=>x.value),[150,135]);
 });
-test('RPE is compared only when matching both weight and reps',()=>{
+test('RIR is compared only when matching both weight and reps',()=>{
  const hist=[record('2026-11-01',[set(135,5,9)]),record('2026-11-02',[set(135,5,8)])];
  assert.equal(comparableEffort(hist).delta,-1);
  assert.equal(comparableEffort([hist[0],record('2026-11-02',[set(140,5,8)])]),null);
@@ -76,7 +76,7 @@ test('Progress renders selected section only, with expandable history and compar
   id:'w'+day,status:'finished',date:'2026-11-'+String(day).padStart(2,'0'),name:'Training',
   exercises:[{exerciseId:'bench',sets:[set(135+i*5,5,8),set(135+i*5,5,9)]}]
  }));
- const state={sessions:entries,exercises:[{id:'bench',name:'Bench Press',muscle:'Chest',progressTarget:{sets:2,reps:5,increment:5,rpeCeiling:9}}],
+ const state={sessions:entries,exercises:[{id:'bench',name:'Bench Press',muscle:'Chest',progressTarget:{sets:2,reps:5,increment:5,rirFloor:1}}],
   progressExercise:'bench',progressSection:'exercises',progressRange:'all',progressWeight:'all',progressRepTarget:'5',
   progressCompareType:'repsAtWeight',progressCompareOpen:false,progressTargetOpen:false,photos:[],photoView:'Front'};
  const render=()=>renderProgressView({state,e:esc,displayDate:x=>x,photoUrl:()=>''});

@@ -1,17 +1,14 @@
 // Pure, conservative progression analysis. All values come from recorded sets.
-// RPE is interpreted as effort context, never inserted into the e1RM formula.
+// RIR describes remaining repetitions; it never enters the e1RM formula.
 import {numericValue} from './analytics.js';
 import {isAdvancedSet} from './advanced-utils.js';
+import {recordedRir,validRir,targetRirFloor} from './effort-utils.js';
 
 export function performedSet(set){
  if(isAdvancedSet(set))return null;
  const weight=numericValue(set?.weight), reps=numericValue(set?.reps);
  if(weight===null||weight<=0||reps===null||!Number.isInteger(reps)||reps<=0)return null;
- return {weight,reps,rpe:validRpe(set?.rpe),warmup:set?.warmup===true};
-}
-export function validRpe(value){
- const rpe=numericValue(value);
- return rpe!==null&&rpe>=1&&rpe<=10?rpe:null;
+ return {weight,reps,rir:recordedRir(set),warmup:set?.warmup===true};
 }
 export function estimatedMax(set){
  if(set?.warmup===true||isAdvancedSet(set))return null;
@@ -29,7 +26,7 @@ export function sessionStrength(record){
  eligible.sort((a,b)=>b.estimate-a.estimate);
  const best=eligible[0];
  return {date:record.date,sessionId:record.sessionId,value:rounded(best.estimate),weight:Number(best.set.weight),
-  reps:Number(best.set.reps),rpe:validRpe(best.set.rpe)};
+  reps:Number(best.set.reps),rir:recordedRir(best.set)};
 }
 export function strengthSessions(history){
  return (history||[]).map(sessionStrength).filter(Boolean);
@@ -99,12 +96,12 @@ export function latestWorkingPerformance(record){
 export function comparableEffort(history){
  const last=(history||[]).at(-1);
  const latest=latestWorkingPerformance(last);
- if(!latest||latest.rpe===null)return null;
+ if(!latest||latest.rir===null)return null;
  for(let i=(history||[]).length-2;i>=0;i--){
   const comparable=(history[i].sets||[]).filter(s=>s?.warmup!==true)
-   .map(performedSet).find(p=>p&&p.weight===latest.weight&&p.reps===latest.reps&&p.rpe!==null);
-  if(comparable)return {weight:latest.weight,reps:latest.reps,current:latest.rpe,previous:comparable.rpe,
-   delta:rounded(latest.rpe-comparable.rpe),priorDate:history[i].date};
+   .map(performedSet).find(p=>p&&p.weight===latest.weight&&p.reps===latest.reps&&p.rir!==null);
+  if(comparable)return {weight:latest.weight,reps:latest.reps,current:latest.rir,previous:comparable.rir,
+   delta:rounded(latest.rir-comparable.rir),priorDate:history[i].date};
  }
  return null;
 }
@@ -115,8 +112,8 @@ export function normalizedTarget(exercise){
  const sets=integer(raw.sets,1,12);
  const reps=integer(raw.reps,1,30);
  const increment=numericValue(raw.increment);
- const rpe=validRpe(raw.rpeCeiling);
- return {sets,reps,increment:increment!==null&&increment>=0.5&&increment<=50?increment:null,rpeCeiling:rpe};
+ const rirFloor=targetRirFloor(raw);
+ return {sets,reps,increment:increment!==null&&increment>=0.5&&increment<=50?increment:null,rirFloor};
 }
 export function nextSessionAdvice(record,exercise){
  const target=normalizedTarget(exercise);
@@ -126,7 +123,7 @@ export function nextSessionAdvice(record,exercise){
  if(!record)return {kind:'missing',label:'Awaiting a completed session',description:'A finished workout with this exercise is needed before suggesting an adjustment.',suggested:null};
  if((record.sets||[]).some(s=>s?.warmup!==true&&isAdvancedSet(s)))return {kind:'advanced',label:'Technique session recorded',description:'This workout included advanced sets. Compare standard working sets before changing the load; no automatic progression suggestion is made.',suggested:null};
  const entries=(record.sets||[]).filter(s=>s?.warmup!==true)
-  .filter(s=>['weight','reps','rpe'].some(key=>s?.[key]!==''&&s?.[key]!==null&&s?.[key]!==undefined));
+  .filter(s=>['weight','reps','rir','rpe'].some(key=>s?.[key]!==''&&s?.[key]!==null&&s?.[key]!==undefined));
  const measured=entries.map(performedSet);
  if(entries.length!==target.sets||measured.some(p=>p===null)){
   return {kind:'missing',label:'Not enough comparable working sets',
@@ -138,16 +135,16 @@ export function nextSessionAdvice(record,exercise){
  }
  const hits=measured.filter(p=>p.reps>=target.reps).length;
  if(hits<target.sets)return {kind:'build',label:'Build repetitions',description:hits+' of '+target.sets+' working sets reached '+target.reps+' repetitions at '+load+' lb. Maintain the load and work toward the target.',suggested:load};
- if(target.rpeCeiling!==null){
-  if(measured.some(p=>p.rpe===null))return {kind:'uncertain',label:'Target met; effort unconfirmed',
-   description:'All repetitions were achieved, but some sets lack RPE. Keep the current load or review effort before increasing.',suggested:null};
-  if(measured.some(p=>p.rpe>target.rpeCeiling))return {kind:'hold',label:'Keep the current load',
-   description:'All repetitions were achieved, but at least one set exceeded the RPE ceiling of '+target.rpeCeiling+'.',suggested:load};
+ if(target.rirFloor!==null){
+  if(measured.some(p=>p.rir===null))return {kind:'uncertain',label:'Target met; effort unconfirmed',
+   description:'All repetitions were achieved, but some sets lack RIR. Keep the current load or review effort before increasing.',suggested:null};
+  if(measured.some(p=>p.rir<target.rirFloor))return {kind:'hold',label:'Keep the current load',
+   description:'All repetitions were achieved, but at least one set had fewer than '+target.rirFloor+' reps in reserve.',suggested:load};
  }
- if(target.rpeCeiling===null&&measured.some(performance=>performance.rpe===10))
+ if(target.rirFloor===null&&measured.some(p=>p.rir===0))
   return {kind:'hold',label:'Target met at maximum effort',
-   description:'All repetitions were achieved, but one or more sets were recorded at RPE 10. Consider repeating the load before increasing.',suggested:load};
+   description:'All repetitions were achieved, but one or more sets were recorded at RIR 0. Consider repeating the load before increasing.',suggested:load};
  const next=rounded(load+target.increment,2);
  return {kind:'increase',label:'Consider '+next+' lb next time',
-  description:'All '+target.sets+' working sets reached '+target.reps+' repetitions at '+load+' lb'+(target.rpeCeiling!==null?' without exceeding RPE '+target.rpeCeiling:'')+'. The '+target.increment+' lb increase is optional.',suggested:next};
+  description:'All '+target.sets+' working sets reached '+target.reps+' repetitions at '+load+' lb'+(target.rirFloor!==null?' with at least '+target.rirFloor+' RIR':'')+'. The '+target.increment+' lb increase is optional.',suggested:next};
 }

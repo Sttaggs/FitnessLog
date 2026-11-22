@@ -2,6 +2,7 @@ import {list, get, put, putMany, remove, replaceStores, newId} from './db.js';
 import {exerciseHistory, exerciseWeights, performanceValue, trendPoints, trendSvg, numericValue} from './analytics.js';
 import {shrinkPhoto, photosForBackup, restorePhotos} from './photo-utils.js';
 import {renderProgressView} from './progress-ui.js';
+import {recordedRir,rirInput,targetRirFloor,validRir} from './effort-utils.js';
 import {ensureWorkoutStart,finishWorkoutTiming,workoutElapsedMs,clockDuration,shortDuration,localTimeLabel,localDateTimeValue,isoFromLocalDateTime,changeWorkoutTime} from './workout-timer.js';
 import {ADVANCED_TYPES,isAdvancedSet,setTechnique,techniqueLabel,newAdvancedSet,setTechniqueOnExisting,hasRecordedStages,MAX_STAGES,linkSuperset,removeSuperset,cleanSupersets,normalizeSetPlan,templatePlanForSet} from './advanced-utils.js';
 import {renderAdvancedSetPanel,renderAdvancedTools,renderSupersetSettings,supersetLabel} from './advanced-ui.js';
@@ -20,7 +21,7 @@ const today = () => new Date().toLocaleDateString('en-CA');
 const displayDate = (s) => { if (!s) return ''; const d = new Date(s + 'T12:00:00'); return isNaN(+d) ? s : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
 const cardioKinds = ['Walking','Running','Jogging','Sprinting','First-step acceleration drills','Treadmill','Stair stepper','Cycling','Stationary bike','Rowing','Elliptical','Rucking','Hiking','Disc golf','Kayaking','Swimming','HIIT','Other'];
 const currentMonth = () => {const now=new Date();return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');};
-const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), workoutTimeOpen:false, advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
+const state = {tab:'home', session:null, sessions:[], exercises:[], templates:[], templateDraft:null, templateDirty:false, justFinishedSessionId:'', report:false, start:'', end:'', expanded:new Set(), libraryDetail:null, historyView:'list', historyMonth:currentMonth(), historyDate:'', previousOpenId:null, moreOpen:new Set(), floatingRestOpen:false, workoutTimeOpen:false, advancedOpen:new Set(),templateAdvancedOpen:new Set(), progressExercise:'', progressSection:'exercises', progressCompareType:'repsAtWeight', progressCompareOpen:false, progressTargetOpen:false, progressRepTarget:'5', progressMetric:'weight', progressRange:'90', progressWeight:'all', photos:[], photosLoaded:false, photoView:'Front', photoA:'', photoB:'', photoMode:'side', overlayPercent:50};
 
 function toast(message) { const el=$('#toast');el.textContent=message;el.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.display='none',2500); }
 function button(label, action, extra='') {return `<button class="btn ${extra}" data-action="${action}">${label}</button>`;}
@@ -194,8 +195,8 @@ async function addExerciseToWorkout(master){
  await render();
  document.querySelector('#exercise-'+entry.id+' input[data-field="weight"]')?.focus({preventScroll:false});
 }
-const blankSet = () => ({id:newId(),weight:'',reps:'',rpe:''});
-const hasSetData = set => Boolean(set && (['weight','reps','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined) || (set.stages||[]).some(stage=>['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined))));
+const blankSet = () => ({id:newId(),weight:'',reps:'',rir:''});
+const hasSetData = set => Boolean(set && (['weight','reps','rir','rpe'].some(key => set[key]!=='' && set[key]!==null && set[key]!==undefined) || (set.stages||[]).some(stage=>['weight','reps','rir','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined))));
 const recordedSets = x => (x.sets||[]).filter(hasSetData);
 async function ensureExercise(name) {
  const clean=String(name||'').trim().replace(/\s+/g,' ');
@@ -297,6 +298,7 @@ async function render() {
  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.tab||(b.dataset.tab==='home'&&['templates','template-editor'].includes(state.tab))));
  title.textContent=state.session?'Workout':({home:'Home',history:'History',progress:'Progress',library:'Library',settings:'Settings',templates:'Templates','template-editor':'Edit template'})[state.tab]||'FitnessLog';
  main.innerHTML=state.report?renderReport():state.session?renderWorkout():({home:renderHome,history:renderHistory,progress:renderProgress,library:renderLibrary,settings:renderSettings,templates:renderTemplates,'template-editor':renderTemplateEditor}[state.tab]||renderHome)();
+ document.getElementById('app')?.classList.toggle('has-floating-rest',!!state.session&&state.session.status==='active'&&!state.report);
 }
 function renderHome() {
  const recent=state.sessions.slice(0,4);
@@ -350,7 +352,7 @@ function renderWorkout() {
  <div class="delete-workout-area">
   ${button('Delete workout','delete-workout','danger wide')}
   <p class="helper">Deleting removes this workout from your history and progress statistics.</p>
- </div></div>`;
+ </div></div>${renderFloatingRest()}`;
 }
 const historicalField = (set,key,fallback) => {
  const value=set?.[key];
@@ -359,24 +361,25 @@ const historicalField = (set,key,fallback) => {
 function restMinutesLabel(seconds){
  return String(Math.round(seconds/60*100)/100);
 }
-function renderRestTimer(x) {
- const key=restKey(x);
+function renderFloatingRest(){
+ if(state.session?.status!=='active')return '';
  const timer=readRestTimer();
- const active=timer.mode!=='idle'&&timer.exerciseId===key;
- const mode=active?timer.mode:'idle';
- const isRunning=mode==='running';
- const isFinished=mode==='finished';
- const primaryAction=active?'rest-stop':'rest-start';
- return '<div class="rest-tiny" data-exercise-timer="'+e(key)+'" data-mode="'+mode+'" role="group" aria-label="Rest timer for '+e(x.name)+'">'+
-  '<span class="rest-tiny-label">Rest</span>'+
-  '<input class="rest-tiny-minutes" data-rest-minutes data-exercise-id="'+e(x.id)+'" type="number" min="0.25" max="30" step="any" inputmode="decimal" aria-label="Rest duration in minutes" value="'+e(restMinutesLabel(restPreference(key)))+'" '+(active?'hidden':'')+'>'+
-  '<span class="rest-tiny-unit" data-rest-unit '+(active?'hidden':'')+'>min</span>'+
-  '<output class="rest-tiny-countdown" data-rest-clock aria-label="Rest time remaining" '+(!active?'hidden':'')+'>'+restTimeLabel(active?timer.remaining:0)+'</output>'+
-  '<button type="button" class="rest-tiny-action" data-rest-primary data-action="'+primaryAction+'" data-id="'+e(x.id)+'" aria-label="'+(active?'Stop rest timer':'Start rest timer')+'">'+(active?(isFinished?'Reset':'Stop'):'Start')+'</button>'+
-  '</div>';
-}
-function restKey(entry) {
- return entry.exerciseId||normalizeName(entry.name)||entry.id;
+ const active=timer.mode!=='idle';
+ const label=active?'Rest · '+restTimeLabel(timer.remaining):'Rest timer · '+restTimeLabel(restPreference('workout'));
+ return '<div class="floating-rest" data-rest-mode="'+timer.mode+'">'+
+  '<details class="floating-rest-details" data-floating-rest '+(state.floatingRestOpen?'open':'')+'>'+
+   '<summary class="floating-rest-trigger" aria-label="Open rest timer controls"><span data-floating-rest-label>'+e(label)+'</span><span aria-hidden="true">⌃</span></summary>'+
+   '<div class="floating-rest-controls">'+
+    '<label>Rest minutes<input data-rest-minutes type="number" min="0.25" max="30" step="any" inputmode="decimal" value="'+e(restMinutesLabel(restPreference('workout')))+'"></label>'+
+    '<div class="floating-rest-actions">'+
+    (timer.mode==='running'?'<button type="button" class="btn secondary" data-action="rest-pause">Pause</button>':
+     timer.mode==='paused'?'<button type="button" class="btn secondary" data-action="rest-resume">Resume</button>':
+     '<button type="button" class="btn" data-action="rest-start">Start</button>')+
+    (active?'<button type="button" class="btn secondary" data-action="rest-minus">−30s</button>'+
+     '<button type="button" class="btn secondary" data-action="rest-plus">+30s</button>'+
+     '<button type="button" class="btn secondary" data-action="rest-stop">Reset</button>':'')+
+    '</div><p class="helper">One rest timer for the workout. It continues while scrolling or when the app is in the background.</p>'+
+   '</div></details></div>';
 }
 let restAudioContext=null;
 function unlockRestSound(){
@@ -413,30 +416,18 @@ function refreshRestTimers(){
  if(timer.mode==='finished'&&!timer.notified&&!document.hidden){
   const recent=Number.isFinite(timer.endAt)&&Date.now()-timer.endAt<60000;
   markRestAlerted();
-  if(recent){playRestSound();toast('Rest complete · '+timer.exerciseName);}
+  if(recent){playRestSound();toast('Rest complete');}
  }
- for(const panel of main.querySelectorAll('[data-exercise-timer]')){
-  const key=panel.dataset.exerciseTimer;
-  const active=timer.mode!=='idle'&&timer.exerciseId===key;
-  const mode=active?timer.mode:'idle';
-  panel.dataset.mode=mode;
-  const input=panel.querySelector('[data-rest-minutes]');
-  const unit=panel.querySelector('[data-rest-unit]');
-  const countdown=panel.querySelector('[data-rest-clock]');
-  if(input)input.hidden=active;
-  if(unit)unit.hidden=active;
-  if(countdown){
-   countdown.hidden=!active;
-   if(active)countdown.textContent=restTimeLabel(timer.remaining);
-  }
-  const button=panel.querySelector('[data-rest-primary]');
-  if(button){
-   const label=active?mode==='finished'?'Reset':'Stop':'Start';
-   button.dataset.action=active?'rest-stop':'rest-start';
-   button.textContent=label;
-   button.setAttribute('aria-label',label+' rest timer');
-  }
- }
+ const bar=main.querySelector('.floating-rest');
+ if(!bar)return;
+ bar.dataset.restMode=timer.mode;
+ const label=bar.querySelector('[data-floating-rest-label]');
+ if(label)label.textContent=timer.mode==='idle'?
+  'Rest timer · '+restTimeLabel(restPreference('workout')):
+  'Rest · '+restTimeLabel(timer.remaining)+(timer.mode==='paused'?' · paused':timer.mode==='finished'?' · done':'');
+ const button=bar.querySelector('[data-action="rest-start"],[data-action="rest-resume"],[data-action="rest-pause"]');
+ const action=timer.mode==='running'?'rest-pause':timer.mode==='paused'?'rest-resume':'rest-start';
+ if(button){button.dataset.action=action;button.textContent=action==='rest-pause'?'Pause':action==='rest-resume'?'Resume':'Start';}
 }
 function muscleOptions(selected){
  const candidates=muscleChoices(state.exercises);
@@ -454,10 +445,10 @@ function renderProgressionTarget(master,compact=false){
   label('sets','Working sets',target.sets,1,12)+
   label('reps','Reps per set',target.reps,1,30)+
   label('increment','Add weight (lb)',target.increment,0.5,50,'any')+
-  label('rpeCeiling','RPE ceiling (optional)',target.rpeCeiling,1,10,'0.5')+
+  label('rirFloor','Minimum RIR (optional)',targetRirFloor(target)??'',0,10,'0.5')+
  '</div>'+
  (compact?'<p class="helper">Targets only guide suggestions. Logged sets remain unchanged.</p>':
-  '<p class="helper">When all targeted working sets reach the rep goal at the same weight, a load increase may be suggested. RPE is optional.</p>');
+  '<p class="helper">When all targeted working sets reach the rep goal, a load increase may be suggested. RIR (reps in reserve) is optional.</p>');
 }
 function renderExerciseMore(x,scope,type){
  const master=state.exercises.find(ex=>ex.id===x.exerciseId);
@@ -494,23 +485,22 @@ function renderExercise(x,i) {
  return `<details class="detail" id="exercise-${x.id}" data-exercise-card="${x.id}" ${isOpen?'open':''}>
  <summary><div class="row between"><div><div class="item-title">${e(x.name||'Exercise')}</div><small class="muted">${e(supersetLabel(x,state.session?.exercises)?supersetLabel(x,state.session?.exercises)+' · ':'')}${e(type)} · ${x.sets?.length||0} ${x.sets?.length===1?'set':'sets'}</small></div><span class="muted">▾</span></div></summary>
  <div class="detail-body">
- ${renderRestTimer(x)}
  ${prev?`<section class="previous-reference">
  <button type="button" class="previous-toggle" data-action="toggle-previous" data-id="${e(x.id)}" aria-expanded="${state.previousOpenId===x.id}" aria-controls="previous-panel-${e(x.id)}">
   <span class="previous-toggle-label"><span class="previous-icon" aria-hidden="true">↶</span>Previous performance <small>${e(displayDate(prev.date))}</small></span>
   <span class="previous-chevron" aria-hidden="true">⌄</span>
  </button>
  <div id="previous-panel-${e(x.id)}" class="previous-panel" ${state.previousOpenId===x.id?'':'hidden'}>
-  ${prev.sets.length?`<div class="previous-sets"><div class="previous-sets-heading"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RPE</span></div>
-  ${prev.sets.map((set,j)=>`<div class="previous-sets-row"><span>${j+1}</span><span>${e(historicalField(set,'weight','—'))}</span><span>${e(historicalField(set,'reps','—'))}</span><span>${e(historicalField(set,'rpe','—'))}</span></div>`).join('')}</div>`:'<p class="helper">No sets recorded in the previous session.</p>'}
+  ${prev.sets.length?`<div class="previous-sets"><div class="previous-sets-heading"><span>SET</span><span>WEIGHT</span><span>REPS</span><span>RIR</span></div>
+  ${prev.sets.map((set,j)=>`<div class="previous-sets-row"><span>${j+1}</span><span>${e(historicalField(set,'weight','—'))}</span><span>${e(historicalField(set,'reps','—'))}</span><span>${e(rirInput(set)||'—')}</span></div>`).join('')}</div>`:'<p class="helper">No sets recorded in the previous session.</p>'}
   ${prev.notes?`<p class="helper previous-notes">Notes: ${e(prev.notes)}</p>`:''}
  </div></section>`:''}
- <div class="set-grid set-heading"><span>SET</span><span>WEIGHT (LB)</span><span>REPS</span><span>RPE</span><span></span></div>
+ <div class="set-grid set-heading"><span>SET</span><span>WEIGHT (LB)</span><span>REPS</span><span>RIR</span><span></span></div>
  ${(x.sets||[]).map((set,j)=>`<div class="set-grid">
  <span class="set-number">${j+1}</span>
  <input aria-label="Set ${j+1} weight in pounds" inputmode="decimal" type="number" min="0" step="any" data-scope="set:${x.id}:${set.id}" data-field="weight" value="${e(set.weight)}" placeholder="${e(historicalField(prev?.sets?.[j],'weight','lb'))}">
  <input aria-label="Set ${j+1} repetitions" inputmode="numeric" type="number" min="0" step="1" data-scope="set:${x.id}:${set.id}" data-field="reps" value="${e(set.reps)}" placeholder="${e(historicalField(prev?.sets?.[j],'reps','—'))}">
- <input aria-label="Set ${j+1} RPE, 1 to 10" inputmode="decimal" type="number" min="1" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rpe" value="${e(set.rpe)}" placeholder="${e(historicalField(prev?.sets?.[j],'rpe','1–10'))}">
+ <input aria-label="Set ${j+1} RIR, 0 to 10" inputmode="decimal" type="number" min="0" max="10" step="0.5" data-scope="set:${x.id}:${set.id}" data-field="rir" value="${e(rirInput(set))}" placeholder="${e(rirInput(prev?.sets?.[j])||'0–10')}">
  <button class="btn danger set-delete" data-action="delete-set" data-exercise="${x.id}" data-id="${set.id}" aria-label="Remove set ${j+1}">×</button></div>${renderAdvancedSetPanel(x,set,e,state.advancedOpen.has(x.id+':'+set.id))}`).join('')}
  ${prev?'<p class="helper historical-hint">Faded values show last time; only typed values are saved.</p>':''}
  <div class="exercise-set-actions"><div class="exercise-add-set"><button class="btn secondary small" data-action="add-set" data-id="${x.id}">＋ Add set</button></div>
@@ -683,7 +673,7 @@ function renderLibrary() {
    (records.length?records.map(({session,entry})=>'<div class="item">'+
     '<div class="row between"><div class="grow"><strong>'+e(displayDate(session.date))+'</strong><p class="helper" style="margin:4px 0">'+e(session.name)+'</p>'+
     '<p class="helper" style="margin:4px 0">'+e(recordedSets(entry).map(set=>
-     [set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',set.rpe?'RPE '+set.rpe:''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details')+
+     [set.weight?set.weight+' lb':'',set.reps?set.reps+' reps':'',recordedRir(set)!==null?'RIR '+recordedRir(set):''].filter(Boolean).join(' · ')).join(' | ')||'Exercise logged; no set details')+
     '</p></div><button class="btn small secondary" data-action="open" data-id="'+e(session.id)+'">View</button></div></div>').join(''):
     '<div class="card empty">No history for this exercise yet.</div>');
  }
@@ -734,7 +724,7 @@ function renderSettings() {
  <input id="restore-file" type="file" accept="application/json,.json" hidden>
  </div>
  <p class="helper">Photo-inclusive backup is optional and may be large. Photo files are included only when you explicitly choose the photo-inclusive option. Restoring a workout-only backup preserves existing photos on this device.</p></div>
- <div class="card"><h2>About</h2><p class="muted">Exercise analytics track standard weight, repetitions, and RPE; advanced stages are recorded separately and saved in backups. Progress photos remain private. Body measurements remain planned.</p></div>`;
+ <div class="card"><h2>About</h2><p class="muted">Exercise analytics track standard weight, repetitions, and RIR; advanced stages are recorded separately and saved in backups. Progress photos remain private. Body measurements remain planned.</p></div>`;
 }
 function selected() {
  return state.sessions.filter(s=>(!state.start||s.date>=state.start)&&(!state.end||s.date<=state.end)).sort((a,b)=>a.date.localeCompare(b.date));
@@ -744,7 +734,7 @@ function renderReport() {
  const setValues=set=>[
   set.weight!==''&&set.weight!=null?set.weight+' lb':'',
   set.reps!==''&&set.reps!=null?set.reps+' reps':'',
-  set.rpe!==''&&set.rpe!=null?'RPE '+set.rpe:''
+  recordedRir(set)!==null?'RIR '+recordedRir(set):''
  ].filter(Boolean).join(' · ');
  const setDescription=set=>{
   const base=setValues(set);
@@ -763,7 +753,7 @@ function renderReport() {
  <p>Workout time: ${e(localTimeLabel(s.startTime))}–${e(localTimeLabel(s.endTime))} · Duration: ${e(shortDuration(workoutElapsedMs(s))||'Not recorded')}</p>
  <p>Overall intensity: ${e(s.intensity||'Not recorded')} · Overall fatigue: ${e(s.fatigue||'Not recorded')}</p>
  <p>${e(s.notes||'')}</p>
- <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RPE)</th></tr></thead><tbody>
+ <table><thead><tr><th>Exercise</th><th>Technique</th><th>Recorded sets (Weight · Reps · RIR)</th></tr></thead><tbody>
  ${(s.exercises||[]).map(x=>`<tr><td>${e(x.name)}${x.notes?' — '+e(x.notes):''}</td>
  <td>${e(x.technique||'Standard')}${supersetLabel(x,s.exercises)?' · '+e(supersetLabel(x,s.exercises)):''}</td>
  <td>${recordedSets(x).map(set=>e(setDescription(set))).join('; ')||'No set data recorded'}</td>
@@ -775,22 +765,22 @@ function renderReport() {
 function download(name, body, mime) {const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function csvValue(x) {return '"'+String(x??'').replace(/"/g,'""')+'"';}
 function exportCsv() {
- const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rpe','session_intensity','session_fatigue','notes','set_method','stage','superset','start_time','end_time','duration_seconds']];
+ const rows=[['date','workout','exercise_id','exercise','technique','set','weight_lb','reps','rir','session_intensity','session_fatigue','notes','set_method','stage','superset','start_time','end_time','duration_seconds','legacy_rpe']];
  const timingColumns=session=>[session.startTime||'',session.endTime||'',workoutElapsedMs(session)===null?'':Math.floor(workoutElapsedMs(session)/1000)];
  for(const s of selected()) {
   for(const x of s.exercises||[]) {
    const sets=recordedSets(x);
    if(sets.length)sets.forEach((set,i)=>{
     const method=isAdvancedSet(set)?techniqueLabel(set):'Standard';
-    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,set.rpe,s.intensity,s.fatigue,x.notes,method,'Main',supersetLabel(x,s.exercises),...timingColumns(s)]);
+    rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,set.weight,set.reps,rirInput(set),s.intensity,s.fatigue,x.notes,method,'Main',supersetLabel(x,s.exercises),...timingColumns(s),set.rpe??'']);
     if(isAdvancedSet(set))for(const [j,stage] of (set.stages||[]).entries()){
      const level=setTechnique(set)==='myo'?'Mini '+(j+1):'Stage '+(j+2);
-     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',stage.rpe||'',s.intensity,s.fatigue,x.notes,method,level,supersetLabel(x,s.exercises),...timingColumns(s)]);
+     rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard',i+1,stage.weight||'',stage.reps||'',rirInput(stage),s.intensity,s.fatigue,x.notes,method,level,supersetLabel(x,s.exercises),...timingColumns(s),stage.rpe??'']);
     }
    });
-   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','',supersetLabel(x,s.exercises),...timingColumns(s)]);
+   else rows.push([s.date,s.name,x.exerciseId||'',x.name,x.technique||'Standard','','','','',s.intensity,s.fatigue,x.notes,'','',supersetLabel(x,s.exercises),...timingColumns(s),'']);
   }
-  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes,'','','',...timingColumns(s)]);
+  for(const a of s.activities||[]) rows.push([s.date,s.name,'',a.type+': '+a.mode,'activity','','',a.duration,a.intensity,s.intensity,s.fatigue,a.notes,'','','',...timingColumns(s),'']);
  }
  download('fitnesslog-'+today()+'.csv',rows.map(r=>r.map(csvValue).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
@@ -937,6 +927,7 @@ async function action(name,el) {
    if(resolved)item.exerciseId=resolved.id;
   }
   const newEntries=templateToEntries(source,state.exercises,newId);
+  if(!active)resetRestTimer();
   if(active){
    state.session=active;
    state.session.exercises.push(...newEntries);
@@ -966,6 +957,7 @@ async function action(name,el) {
   await flushSave();
   const active=state.sessions.find(x=>x.status==='active');
   state.expanded=new Set(active?.exercises?.map(x=>x.id)||[]);
+  if(!active)resetRestTimer();
   state.session=active||{id:newId(),name:'Workout',date:today(),status:'active',createdAt:new Date().toISOString(),startTime:new Date().toISOString(),intensity:'',fatigue:'',notes:'',exercises:[],activities:[]};
    ensureWorkoutStart(state.session);
    state.workoutTimeOpen=false;
@@ -982,7 +974,7 @@ async function action(name,el) {
   return;
  }
  if(name==='progress-metric'){
-  if(['weight','reps','rpe'].includes(el.dataset.metric)){
+  if(['weight','reps','rir'].includes(el.dataset.metric)){
    state.progressMetric=el.dataset.metric;
    await render();
   }
@@ -1057,33 +1049,31 @@ async function action(name,el) {
   state.previousOpenId=shouldOpen?el.dataset.id:null;
   return;
  }
- if(name==='rest-start'||name==='rest-stop'){
-  const exercise=s?.exercises?.find(x=>x.id===el.dataset.id);
-  if(!exercise)return;
-  const key=restKey(exercise);
-  if(name==='rest-stop'){
-   const running=readRestTimer();
-   if(running.mode!=='idle'&&running.exerciseId===key)resetRestTimer();
-  }else{
-   const input=document.querySelector('[data-rest-minutes][data-exercise-id="'+exercise.id+'"]');
+ if(['rest-start','rest-stop','rest-pause','rest-resume','rest-plus','rest-minus'].includes(name)){
+  if(!s||s.status!=='active')return;
+  const timer=readRestTimer();
+  if(name==='rest-stop')resetRestTimer();
+  else if(name==='rest-pause')pauseRestTimer();
+  else if(name==='rest-resume')resumeRestTimer();
+  else if(name==='rest-plus'||name==='rest-minus')adjustRestTimer(name==='rest-plus'?30:-30);
+  else{
+   const input=main.querySelector('[data-rest-minutes]');
    const minutes=Number(input?.value);
    if(!input||input.value.trim()===''||!Number.isFinite(minutes)||minutes<0.25||minutes>30){
-    toast('Enter a rest time between 0.25 and 30 minutes');
-    input?.focus();
-    return;
+    toast('Rest must be between 0.25 and 30 minutes');input?.focus();return;
    }
    const seconds=Math.round(minutes*60);
-   setRestPreference(key,seconds);
+   setRestPreference('workout',seconds);
    unlockRestSound();
-   startRestTimer(key,exercise.name,seconds);
-   input.blur();
+   startRestTimer('workout','Workout',seconds);
   }
+  await render();
   refreshRestTimers();
   return;
  }
  if(name==='view-library'){state.libraryDetail=el.dataset.id;return render();}
  if(name==='library-back'){state.libraryDetail=null;return render();}
- if(name==='finish'){if(!s)return;const wasActive=s.status==='active';if(wasActive&&!finishWorkoutTiming(s)){toast('Start time is later than the current time. Adjust it before finishing.');return;}s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.workoutTimeOpen=false;state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
+ if(name==='finish'){if(!s)return;const wasActive=s.status==='active';if(wasActive&&!finishWorkoutTiming(s)){toast('Start time is later than the current time. Adjust it before finishing.');return;}s.status='finished';clearTimeout(saveTimer);saveTimer=null;await saveSession();state.justFinishedSessionId=wasActive?s.id:'';state.session=null;state.workoutTimeOpen=false;state.floatingRestOpen=false;resetRestTimer();state.expanded.clear();state.tab='history';toast('Workout saved');return render();}
  if(name==='add-advanced-set'){
   const entry=s?.exercises?.find(x=>x.id===el.dataset.id);
   const type=el.dataset.type;
@@ -1117,11 +1107,11 @@ async function action(name,el) {
   chosen.stages=Array.isArray(chosen.stages)?chosen.stages:[];
   if(name==='add-stage'){
    if(chosen.stages.length>=MAX_STAGES){toast('Stage limit reached');return;}
-   chosen.stages.push({id:newId(),weight:'',reps:'',rpe:''});
+   chosen.stages.push({id:newId(),weight:'',reps:'',rir:''});
   }else{
    const stage=chosen.stages.find(stage=>stage.id===el.dataset.stage);
    if(!stage)return;
-   if(['weight','reps','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined)&&
+   if(['weight','reps','rir','rpe'].some(key=>stage[key]!==''&&stage[key]!==null&&stage[key]!==undefined)&&
       !confirm('Remove this recorded stage?'))return;
    chosen.stages=chosen.stages.filter(stage=>stage.id!==el.dataset.stage);
   }
@@ -1150,7 +1140,7 @@ async function action(name,el) {
  if(name==='add-set'){
   const x=s.exercises.find(x=>x.id===el.dataset.id);
   // The new set starts with no recorded measurements. Its weight, reps and
-  // RPE placeholders are derived solely from the same index of the previous
+  // RIR placeholders are derived solely from the same index of the previous
   // completed workout, when available, by renderExercise().
   x.sets.push(blankSet());
   state.expanded.add(x.id);
@@ -1206,8 +1196,8 @@ function validateEntry(input,value,showError=false) {
   if(showError)toast('Rating must be between 1 and 10');
   return false;
  }
- if(field==='rpe'&&value!==''&&(Number(value)<1||Number(value)>10)) {
-  if(showError)toast('RPE must be between 1 and 10');
+ if(field==='rir'&&value!==''&&validRir(value)===null) {
+  if(showError)toast('RIR must be between 0 and 10 in half-rep steps');
   return false;
  }
  return true;
@@ -1331,6 +1321,7 @@ document.addEventListener('toggle',ev=>{
   else state.templateAdvancedOpen.delete(index);
   return;
  }
+ if(card.matches?.('[data-floating-rest]')){state.floatingRestOpen=card.open;return;}
  if(card.matches?.('[data-workout-time-editor]')){state.workoutTimeOpen=card.open;return;}
  if(card.matches?.('[data-advanced-set]')){
   if(card.open)state.advancedOpen.add(card.dataset.advancedSet);
@@ -1410,7 +1401,7 @@ document.addEventListener('change',async ev=>{
   const ex=state.exercises.find(ex=>ex.id===ev.target.dataset.progressTarget);
   if(!ex)return;
   const field=ev.target.dataset.targetField,limits={
-   sets:[1,12,true],reps:[1,30,true],increment:[0.5,50,false],rpeCeiling:[1,10,false]
+   sets:[1,12,true],reps:[1,30,true],increment:[0.5,50,false],rirFloor:[0,10,false]
   };
   const constraint=limits[field];
   if(!constraint)return;
@@ -1419,9 +1410,9 @@ document.addEventListener('change',async ev=>{
    const numeric=Number(raw);
    if(!Number.isFinite(numeric)||numeric<constraint[0]||numeric>constraint[1]||
       (constraint[2]&&!Number.isInteger(numeric))||
-      (field==='rpeCeiling'&&numeric*2!==Math.round(numeric*2))){
+      (field==='rirFloor'&&numeric*2!==Math.round(numeric*2))){
     toast('Enter a valid target or leave the field blank');
-    ev.target.value=ex.progressTarget?.[field]??'';
+    ev.target.value=field==='rirFloor'?(targetRirFloor(ex.progressTarget)??''):(ex.progressTarget?.[field]??'');
     return;
    }
   }
@@ -1452,8 +1443,11 @@ document.addEventListener('change',async ev=>{
  if(ev.target.matches?.('[data-rest-minutes]')){
   const minutes=Number(ev.target.value);
   if(ev.target.value.trim()!==''&&Number.isFinite(minutes)&&minutes>=0.25&&minutes<=30){
-   const exercise=state.session?.exercises?.find(x=>x.id===ev.target.dataset.exerciseId);
-   if(exercise)setRestPreference(restKey(exercise),Math.round(minutes*60));
+   setRestPreference('workout',Math.round(minutes*60));
+   refreshRestTimers();
+  }else{
+   toast('Rest must be between 0.25 and 30 minutes');
+   ev.target.value=restMinutesLabel(restPreference('workout'));
   }
   return;
  }

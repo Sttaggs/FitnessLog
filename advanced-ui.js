@@ -1,4 +1,5 @@
 import {ADVANCED_TYPES,isAdvancedSet,setTechnique,techniqueLabel,MAX_STAGES} from './advanced-utils.js';
+import {rirInput} from './effort-utils.js';
 
 export function supersetLabel(entry,entries){
  if(!entry?.supersetId)return '';
@@ -29,7 +30,7 @@ export function renderAdvancedSetPanel(entry,set,e,isOpen=false){
   '<span class="advanced-stage-label">'+(type==='myo'?'Mini '+(j+1):'Stage '+(j+2))+'</span>'+
   (type==='myo'?'':'<input type="number" min="0" step="any" inputmode="decimal" aria-label="Stage '+(j+2)+' weight in pounds" placeholder="lb" data-scope="stage:'+e(entry.id)+':'+e(set.id)+':'+e(stage.id)+'" data-field="weight" value="'+e(stage.weight??'')+'">')+
   '<input type="number" min="0" step="1" inputmode="numeric" aria-label="'+(type==='myo'?'Mini-set':'Stage')+' '+(j+1)+' repetitions" placeholder="Reps" data-scope="stage:'+e(entry.id)+':'+e(set.id)+':'+e(stage.id)+'" data-field="reps" value="'+e(stage.reps??'')+'">'+
-  (type==='myo'?'':'<input type="number" min="1" max="10" step="0.5" inputmode="decimal" aria-label="Stage '+(j+2)+' RPE" placeholder="RPE" data-scope="stage:'+e(entry.id)+':'+e(set.id)+':'+e(stage.id)+'" data-field="rpe" value="'+e(stage.rpe??'')+'">')+
+  (type==='myo'?'':'<input type="number" min="0" max="10" step="0.5" inputmode="decimal" aria-label="Stage '+(j+2)+' RIR" placeholder="RIR" data-scope="stage:'+e(entry.id)+':'+e(set.id)+':'+e(stage.id)+'" data-field="rir" value="'+e(rirInput(stage))+'">')+
   '<button type="button" class="btn danger set-delete" data-action="remove-stage" data-exercise="'+e(entry.id)+'" data-set="'+e(set.id)+'" data-stage="'+e(stage.id)+'" aria-label="Remove stage '+(j+1)+'">×</button></div>').join('');
  return '<details class="advanced-set-panel" data-advanced-set="'+e(openKey)+'" '+(isOpen?'open':'')+'>'+
   '<summary>'+e(techniqueLabel(set))+' · '+(stages.length+1)+' '+(type==='myo'?'parts':'stages')+'</summary>'+

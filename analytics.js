@@ -1,3 +1,4 @@
+import {recordedRir} from './effort-utils.js';
 // Pure exercise-specific analysis. Missing measurements are not counted as zero.
 export function numericValue(value) {
   if (value === '' || value === null || value === undefined) return null;
@@ -35,14 +36,14 @@ export function performanceValue(session, metric, weightFilter='all') {
   const values = [];
   for (const set of sets) {
     if (metric === 'reps' && weightFilter !== 'all' && numericValue(set.weight) !== Number(weightFilter)) continue;
-    const v = numericValue(set[metric === 'weight' ? 'weight' : metric]);
+    const v = metric==='rir'?recordedRir(set):numericValue(set[metric === 'weight' ? 'weight' : metric]);
     if (v === null) continue;
     if ((metric === 'weight' || metric === 'reps') && v < 0) continue;
-    if (metric === 'rpe' && (v < 1 || v > 10)) continue;
+    if (metric === 'rir' && (v < 1 || v > 10)) continue;
     values.push(v);
   }
   if (!values.length) return null;
-  if (metric === 'rpe') return Math.round((values.reduce((a,b) => a+b,0) / values.length) * 10)/10;
+  if (metric === 'rir') return Math.round((values.reduce((a,b) => a+b,0) / values.length) * 10)/10;
   return Math.max(...values);
 }
 
@@ -64,7 +65,7 @@ export function trendSvg(points, metric='weight') {
   const chartHeight=height-top-bottom,chartWidth=width-left-right;
   const values=points.map(p=>p.value);
   let min=Math.min(...values),max=Math.max(...values);
-  if (metric==='rpe') {min=1;max=10;}
+  if (metric==='rir') {min=1;max=10;}
   else if(max===min) {
     min=0;
     max=Math.max(1,max*1.1);
@@ -78,7 +79,7 @@ export function trendSvg(points, metric='weight') {
   const x=i=>left+(points.length===1?chartWidth/2:i*chartWidth/(points.length-1));
   const coords=points.map((p,i)=>({x:x(i),y:y(p.value),p}));
   const path=coords.map((p,i)=>(i?'L':'M')+p.x.toFixed(2)+' '+p.y.toFixed(2)).join(' ');
-  const unit=metric==='weight'?'lb':metric==='reps'?'reps':'RPE';
+  const unit=metric==='weight'?'lb':metric==='reps'?'reps':'RIR';
   const fmt=value=>Number.isInteger(value)?String(value):value.toFixed(1);
   const safe=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const grid=Array.from({length:5},(_,i)=>{

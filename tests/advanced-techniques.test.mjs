@@ -17,7 +17,7 @@ test('ordinary set shape and estimated 1RM remain unchanged',()=>{
  assert.equal(setTechnique(standard),'standard');
  assert.equal(isAdvancedSet(standard),false);
  assert.equal(estimatedMax(standard),185*(1+5/30));
- assert.deepEqual(blankSetFromPlan(null,()=> 'fresh'),{id:'fresh',weight:'',reps:'',rpe:''});
+ assert.deepEqual(blankSetFromPlan(null,()=> 'fresh'),{id:'fresh',weight:'',reps:'',rir:''});
 });
 test('drop, Myo-reps and ladder add blank stages without invented loads or reps',()=>{
  let id=0;
@@ -26,7 +26,7 @@ test('drop, Myo-reps and ladder add blank stages without invented loads or reps'
   assert.equal(isAdvancedSet(set),true);
   assert.equal(set.stages.length,2);
   assert.equal(set.technique,type);
-  assert.ok(set.stages.every(stage=>stage.weight===''&&stage.reps===''&&stage.rpe===''));
+  assert.ok(set.stages.every(stage=>stage.weight===''&&stage.reps===''&&stage.rir===''));
   assert.equal(estimatedMax({...set,weight:200,reps:5}),null);
   assert.equal(techniqueLabel(set).length>0,true);
  }
