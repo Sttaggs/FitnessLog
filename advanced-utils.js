@@ -19,8 +19,8 @@ export function stageCount(set){
 export function newAdvancedSet(type,newId,stageTotal=2){
  if(!ADVANCED_TYPES.includes(type))throw new Error('Unknown advanced set type');
  const total=Number.isInteger(stageTotal)?Math.max(1,Math.min(MAX_STAGES,stageTotal)):2;
- return {id:newId(),weight:'',reps:'',rpe:'',technique:type,
-  stages:Array.from({length:total},()=>({id:newId(),weight:'',reps:'',rpe:''}))};
+ return {id:newId(),weight:'',reps:'',rir:'',technique:type,
+  stages:Array.from({length:total},()=>({id:newId(),weight:'',reps:'',rir:''}))};
 }
 export function setTechniqueOnExisting(set,type,newId){
  if(!set||!['standard',...ADVANCED_TYPES].includes(type))return false;
@@ -31,11 +31,11 @@ export function setTechniqueOnExisting(set,type,newId){
  }
  if(setTechnique(set)===type)return true;
  set.technique=type;
- set.stages=Array.from({length:2},()=>({id:newId(),weight:'',reps:'',rpe:''}));
+ set.stages=Array.from({length:2},()=>({id:newId(),weight:'',reps:'',rir:''}));
  return true;
 }
 export function hasRecordedStages(set){
- return (set?.stages||[]).some(stage=>['weight','reps','rpe'].some(field=>
+ return (set?.stages||[]).some(stage=>['weight','reps','rir','rpe'].some(field=>
   stage[field]!==''&&stage[field]!==null&&stage[field]!==undefined));
 }
 export function templatePlanForSet(set){
@@ -50,7 +50,7 @@ export function normalizeSetPlan(plan){
 }
 export function blankSetFromPlan(plan,newId){
  const clean=normalizeSetPlan(plan);
- if(clean.technique==='standard')return {id:newId(),weight:'',reps:'',rpe:''};
+ if(clean.technique==='standard')return {id:newId(),weight:'',reps:'',rir:''};
  return newAdvancedSet(clean.technique,newId,clean.stages);
 }
 // Superset link is a shared group ID on exactly two independent exercises.
